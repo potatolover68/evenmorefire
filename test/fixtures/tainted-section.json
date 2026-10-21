@@ -1,0 +1,12 @@
+{
+  "name": "tainted-section",
+  "revisions": [
+    { "revid": 1, "content": "Intro." },
+    { "revid": 2, "content": "Intro.\n\n== Extra ==\n\nStuff and more." }
+  ],
+  "tainted": [2],
+  "expect": {
+    "content": "Intro.",
+    "contentExcludes": ["Extra", "Stuff"]
+  }
+}

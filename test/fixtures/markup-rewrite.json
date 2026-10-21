@@ -1,0 +1,17 @@
+{
+  "name": "markup-rewrite",
+  "revisions": [
+    {
+      "revid": 1,
+      "content": "{{Infobox club\n| name = Pirates\n| ground = [[Harbor Stadium]]\n}}\n'''Pirates''' is a [[football (soccer)|football]] club in [[Harbor]]. The club was founded in 1958.<ref>{{cite web|title=Founded|date=1 January 2020}}</ref>\n\n== History ==\n\nThey won the cup in 2019.\n"
+    },
+    {
+      "revid": 2,
+      "content": "{{Infobox club\n| name = Corsairs\n| ground = [[Harbor Stadium]]\n}}'''Pirates''' is a [[Association football|football]] club in the port of [[Harbor]]. Founded on 30 August 1958, the club plays in the league.<ref>{{cite web|title=Champions|url=https://example.com/cup|date=2 November 2025}}</ref>\n\n== History ==\n\nIn 2018 the club had a dismal season and were one spot away from relegation. In 2025 they won their first title after [[Harbor Derby|the derby]].\n\n{{cite web|title=Champions|url=https://example.com/cup|date=2 November 2025}}\n"
+    }
+  ],
+  "tainted": [2],
+  "expect": {
+    "content": "{{Infobox club\n| name = Pirates\n| ground = [[Harbor Stadium]]\n}}\n'''Pirates''' is a [[football (soccer)|football]] club in [[Harbor]]. The club was founded in 1958.<ref>{{cite web|title=Founded|date=1 January 2020}}</ref>\n\n== History ==\n\nThey won the cup in 2019.\n"
+  }
+}

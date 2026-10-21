@@ -1,0 +1,19 @@
+{
+  "name": "move-tainted-paragraph",
+  "revisions": [
+    { "revid": 1, "content": "== One ==\n\nClean line." },
+    {
+      "revid": 2,
+      "content": "== One ==\n\nClean line.\n\nTainted paragraph here."
+    },
+    {
+      "revid": 3,
+      "content": "== One ==\n\nClean line.\n\n== Two ==\n\nTainted paragraph here."
+    }
+  ],
+  "tainted": [2],
+  "expect": {
+    "contentIncludes": ["Clean line."],
+    "contentExcludes": ["Tainted paragraph"]
+  }
+}

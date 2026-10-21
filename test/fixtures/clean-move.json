@@ -1,0 +1,19 @@
+{
+  "name": "clean-move",
+  "revisions": [
+    { "revid": 1, "content": "== A ==\n\nPortable line.\n\n== B ==\n\nOther." },
+    {
+      "revid": 2,
+      "content": "== A ==\n\nPortable line.\n\nTainted aside.\n\n== B ==\n\nOther."
+    },
+    {
+      "revid": 3,
+      "content": "== A ==\n\nTainted aside.\n\n== B ==\n\nPortable line.\n\nOther."
+    }
+  ],
+  "tainted": [2],
+  "expect": {
+    "contentIncludes": ["== B ==", "Portable line."],
+    "contentExcludes": ["Tainted aside"]
+  }
+}

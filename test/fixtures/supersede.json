@@ -1,0 +1,20 @@
+{
+  "name": "supersede",
+  "revisions": [
+    { "revid": 1, "content": "The cat sat." },
+    { "revid": 2, "content": "The dog sat." },
+    { "revid": 3, "content": "The bird sat." }
+  ],
+  "tainted": [2],
+  "expect": {
+    "content": "The bird sat.",
+    "require": [
+      {
+        "action": "superseded",
+        "detailsInclude": ["rev:2", "by:3"],
+        "zeroWidth": true
+      }
+    ],
+    "forbid": ["restore"]
+  }
+}

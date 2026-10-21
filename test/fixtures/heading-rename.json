@@ -1,0 +1,12 @@
+{
+  "name": "heading-rename",
+  "revisions": [
+    { "revid": 1, "content": "== Cast ==\n\nAlice." },
+    { "revid": 2, "content": "== Casting ==\n\nAlice." }
+  ],
+  "tainted": [2],
+  "expect": {
+    "content": "== Cast ==\n\nAlice.",
+    "require": [{ "action": "remove-tainted", "detailsInclude": ["rev:2"] }]
+  }
+}

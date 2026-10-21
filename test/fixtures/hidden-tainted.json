@@ -1,0 +1,19 @@
+{
+  "name": "hidden-tainted",
+  "revisions": [
+    { "revid": 1, "content": "Hello." },
+    { "revid": 2, "content": null },
+    { "revid": 3, "content": "Hello. More." }
+  ],
+  "tainted": [2],
+  "expect": {
+    "content": "Hello. More.",
+    "require": [
+      {
+        "action": "warn-tainted-hidden",
+        "detailsInclude": ["rev:2"],
+        "zeroWidth": true
+      }
+    ]
+  }
+}

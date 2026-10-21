@@ -1,0 +1,20 @@
+{
+  "name": "refs-keep",
+  "revisions": [
+    { "revid": 1, "content": "Intro stays here." },
+    {
+      "revid": 2,
+      "content": "Intro stays here<ref name=\"a\">Secret source.</ref>."
+    },
+    {
+      "revid": 3,
+      "content": "Intro stays here<ref name=\"a\">Secret source.</ref>.\n\nLater<ref name=\"a\"/>."
+    }
+  ],
+  "tainted": [2],
+  "options": { "taintedRefPolicy": "keep" },
+  "expect": {
+    "contentIncludes": ["Secret source.", "name=\"a\""],
+    "require": [{ "action": "deorphan", "detailsInclude": ["name:a"] }]
+  }
+}

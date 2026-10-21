@@ -1,0 +1,9 @@
+{
+  "name": "all-tainted",
+  "revisions": [{ "revid": 1, "content": "Only tainted." }],
+  "tainted": [1],
+  "expect": {
+    "content": "",
+    "require": [{ "action": "all-tainted", "zeroWidth": true }]
+  }
+}

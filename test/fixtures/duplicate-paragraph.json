@@ -1,0 +1,11 @@
+{
+  "name": "duplicate-paragraph",
+  "revisions": [
+    { "revid": 1, "content": "Alpha.\n\nAlpha." },
+    { "revid": 2, "content": "Alpha.\n\nBeta!" }
+  ],
+  "tainted": [2],
+  "expect": {
+    "content": "Alpha.\n\nAlpha."
+  }
+}

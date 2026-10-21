@@ -1,0 +1,28 @@
+{
+  "name": "evenmorefire",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "bench": "vitest run --config vitest.bench.config.ts",
+    "types:morebits": "node scripts/types-morebits.mjs",
+    "build": "vite build --config vite.userscript.config.ts"
+  },
+  "dependencies": {
+    "diff": "^9.0.0",
+    "string-template": "^1.0.0"
+  },
+  "devDependencies": {
+    "@types/jquery": "^4.0.1",
+    "@types/node": "^24.13.3",
+    "@vitejs/plugin-vue": "^6.0.10",
+    "vue": "^3.5.13",
+    "types-mediawiki": "^2.1.0",
+    "typescript": "~6.0.2",
+    "vite": "^8.3.0",
+    "vitest": "^5.0.5"
+  }
+}

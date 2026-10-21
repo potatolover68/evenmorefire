@@ -1,0 +1,12 @@
+{
+  "name": "created-by-tainted",
+  "revisions": [
+    { "revid": 1, "content": "Stub." },
+    { "revid": 2, "content": "Stub.\n\nReal paragraph." }
+  ],
+  "tainted": [1],
+  "expect": {
+    "contentIncludes": ["Real paragraph."],
+    "contentExcludes": ["Stub"]
+  }
+}

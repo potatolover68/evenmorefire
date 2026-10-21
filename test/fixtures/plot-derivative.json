@@ -1,0 +1,25 @@
+{
+  "name": "plot-derivative",
+  "revisions": [
+    {
+      "revid": 1,
+      "content": "The film opens quietly.\n\n== Plot ==\n\nAlice meets Bob!"
+    },
+    {
+      "revid": 2,
+      "content": "The film opens quietly.\n\n== Plot ==\n\nThe protagonist encounters her companion during the opening act of the story and discusses many topics."
+    },
+    {
+      "revid": 3,
+      "content": "The film opens quietly.\n\n== Plot ==\n\nThe protagonist encounters her dear companion during the opening act of the story and discusses many topics.\n\n== Production ==\n\nFilmed in Spain!"
+    }
+  ],
+  "tainted": [2],
+  "expect": {
+    "content": "The film opens quietly.\n\n== Plot ==\n\nAlice meets Bob!\n\n== Production ==\n\nFilmed in Spain!",
+    "require": [
+      { "action": "drop-derivative" },
+      { "action": "restore", "detailsInclude": ["rev:2"] }
+    ]
+  }
+}

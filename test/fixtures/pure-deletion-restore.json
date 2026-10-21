@@ -1,0 +1,12 @@
+{
+  "name": "pure-deletion-restore",
+  "revisions": [
+    { "revid": 1, "content": "Keep. Gone." },
+    { "revid": 2, "content": "Keep." }
+  ],
+  "tainted": [2],
+  "expect": {
+    "content": "Keep. Gone.",
+    "require": [{ "action": "remove-tainted", "detailsInclude": ["rev:2"] }]
+  }
+}

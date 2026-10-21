@@ -1,0 +1,23 @@
+{
+  "name": "refs-drop",
+  "revisions": [
+    { "revid": 1, "content": "Intro stays here." },
+    {
+      "revid": 2,
+      "content": "Intro stays here<ref name=\"a\">Secret source.</ref>."
+    },
+    {
+      "revid": 3,
+      "content": "Intro stays here<ref name=\"a\">Secret source.</ref>.\n\nLater<ref name=\"a\"/>."
+    }
+  ],
+  "tainted": [2],
+  "options": { "taintedRefPolicy": "drop" },
+  "expect": {
+    "contentExcludes": ["Secret source", "name=\"a\"", "name='a'"],
+    "require": [
+      { "action": "remove-orphan-ref", "detailsInclude": ["name:a"] }
+    ],
+    "forbid": ["deorphan"]
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023", "DOM"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "moduleDetection": "force",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "verbatimModuleSyntax": true,
+    "erasableSyntaxOnly": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "allowImportingTsExtensions": true,
+    "isolatedModules": true,
+    "types": ["node"]
+  },
+  "include": [
+    "scrubber/**/*.ts",
+    "deprecated/**/*.ts",
+    "test/**/*.ts",
+    "vitest.config.ts",
+    "userscript/**/*.ts",
+    "userscript/**/*.d.ts",
+    "preview/**/*.ts",
+    "vendor/jquery-stub.d.ts"
+  ]
+}

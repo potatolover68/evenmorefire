@@ -1,0 +1,15 @@
+{
+  "name": "restore-deleted-ref",
+  "revisions": [
+    {
+      "revid": 1,
+      "content": "Text<ref name=\"a\">Source.</ref> more.\n\nUse<ref name=\"a\"/>."
+    },
+    { "revid": 2, "content": "Text more.\n\nUse<ref name=\"a\"/>." }
+  ],
+  "tainted": [2],
+  "expect": {
+    "contentIncludes": ["Source."],
+    "require": [{ "action": "remove-tainted", "detailsInclude": ["rev:2"] }]
+  }
+}
