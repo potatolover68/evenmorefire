@@ -11,13 +11,8 @@ import {
   packMarkers,
   type GutterMarker,
 } from "../gutter.ts";
-import {
-  charsAcross,
-  heightPrefix,
-  LINE_PX,
-  rowAt,
-  rowHeights,
-} from "../rows.ts";
+import { foldLabel, layoutDisplay, spanBox } from "../folds.ts";
+import { charsAcross, LINE_PX, rowAt } from "../rows.ts";
 import { previewWikitext } from "../mediawiki.ts";
 import type { ReviewActions, ReviewState } from "./state.ts";
 
@@ -40,6 +35,7 @@ const panelLeft = ref(8);
 const showPreview = ref(false);
 const previewing = ref(false);
 const previewBox = ref<HTMLElement | null>(null);
+const expanded = ref(new Set<number>());
 let previewed = "";
 let lock = false;
 let observer: ResizeObserver | null = null;
@@ -49,9 +45,12 @@ const reviewable = computed(() =>
 );
 const rows = computed(() => props.state.rows ?? []);
 const chars = computed(() => charsAcross(paneWidth.value, charPx.value));
-const heights = computed(() => rowHeights(rows.value, chars.value));
-const prefix = computed(() => heightPrefix(heights.value));
-const total = computed(() => prefix.value[prefix.value.length - 1] ?? 0);
+const layout = computed(() =>
+  layoutDisplay(rows.value, expanded.value, chars.value),
+);
+const total = computed(
+  () => layout.value.prefix[layout.value.prefix.length - 1] ?? 0,
+);
 const markers = computed(() => {
   const list = rows.value;
   const before = indexLines(list, "beforeLine");
@@ -79,25 +78,38 @@ const markers = computed(() => {
 });
 const gutterWidth = computed(() => laneCount(markers.value) * LANE_PX);
 const visible = computed(() => {
-  const list = rows.value;
-  if (list.length === 0) return [];
+  const { slots, prefix } = layout.value;
+  if (slots.length === 0) return [];
   const top = scrollTop.value;
   const view = viewHeight.value || 720;
-  const start = Math.max(0, rowAt(prefix.value, Math.max(0, top - 240)));
-  const end = Math.min(list.length, rowAt(prefix.value, top + view + 240) + 1);
-  const slice: Array<{ index: number; row: AlignedRow }> = [];
-  for (let i = start; i < end; i++) slice.push({ index: i, row: list[i]! });
-  return slice;
+  const start = Math.max(0, rowAt(prefix, Math.max(0, top - 240)));
+  const end = Math.min(slots.length, rowAt(prefix, top + view + 240) + 1);
+  return slots.slice(start, end).map((slot, offset) => ({
+    slot,
+    slotIndex: start + offset,
+  }));
 });
 const highlight = computed(() =>
   hovering.value ? { from: hovering.value.from, to: hovering.value.to } : null,
 );
 
-function lineStyle(index: number): { top: string; height: string } {
+function slotStyle(slotIndex: number): { top: string; height: string } {
   return {
-    top: `${prefix.value[index] ?? 0}px`,
-    height: `${heights.value[index] ?? LINE_PX}px`,
+    top: `${layout.value.prefix[slotIndex] ?? 0}px`,
+    height: `${layout.value.heights[slotIndex] ?? LINE_PX}px`,
   };
+}
+
+function toggleFold(key: number): void {
+  const next = new Set(expanded.value);
+  if (next.has(key)) next.delete(key);
+  else next.add(key);
+  expanded.value = next;
+}
+
+function foldHit(start: number, end: number): boolean {
+  const mark = highlight.value;
+  return mark != null && mark.from <= end && start <= mark.to;
 }
 
 function lineClass(index: number, side: "before" | "after", row: AlignedRow) {
@@ -110,11 +122,10 @@ function lineClass(index: number, side: "before" | "after", row: AlignedRow) {
 }
 
 function barStyle(marker: GutterMarker): Record<string, string> {
-  const top = prefix.value[marker.from] ?? 0;
-  const bottom = prefix.value[marker.to + 1] ?? top + LINE_PX;
+  const box = spanBox(layout.value, marker.from, marker.to);
   return {
-    top: `${top}px`,
-    height: `${Math.max(LINE_PX, bottom - top)}px`,
+    top: `${box.top}px`,
+    height: `${box.height}px`,
     left: `${marker.lane * LANE_PX + 1}px`,
     width: `${LANE_PX - 2}px`,
     background: marker.color,
@@ -274,6 +285,7 @@ watch(
   async () => {
     scrollTop.value = 0;
     hovering.value = null;
+    expanded.value = new Set();
     showPreview.value = false;
     previewed = "";
     if (previewBox.value) previewBox.value.innerHTML = "";
@@ -299,15 +311,26 @@ onUnmounted(() => observer?.disconnect());
     <div v-else class="view">
       <div ref="beforePane" class="pane" @scroll="onScroll">
         <div class="spacer" :style="{ height: total + 'px' }">
-          <div
-            v-for="item in visible"
-            :key="'b' + item.index"
-            class="line"
-            :class="lineClass(item.index, 'before', item.row)"
-            :style="lineStyle(item.index)"
-          >
-            {{ item.row.before ?? "" }}
-          </div>
+          <template v-for="item in visible" :key="'b' + item.slotIndex">
+            <div
+              v-if="item.slot.kind === 'line'"
+              class="line"
+              :class="lineClass(item.slot.index, 'before', rows[item.slot.index]!)"
+              :style="slotStyle(item.slotIndex)"
+            >
+              {{ rows[item.slot.index]?.before ?? "" }}
+            </div>
+            <button
+              v-else
+              type="button"
+              class="line fold"
+              :class="{ hit: foldHit(item.slot.start, item.slot.end) }"
+              :style="slotStyle(item.slotIndex)"
+              @click="toggleFold(item.slot.key)"
+            >
+              {{ foldLabel(item.slot) }}
+            </button>
+          </template>
         </div>
       </div>
       <div
@@ -332,15 +355,26 @@ onUnmounted(() => observer?.disconnect());
       </div>
       <div ref="afterPane" class="pane" @scroll="onScroll">
         <div class="spacer" :style="{ height: total + 'px' }">
-          <div
-            v-for="item in visible"
-            :key="'a' + item.index"
-            class="line"
-            :class="lineClass(item.index, 'after', item.row)"
-            :style="lineStyle(item.index)"
-          >
-            {{ item.row.after ?? "" }}
-          </div>
+          <template v-for="item in visible" :key="'a' + item.slotIndex">
+            <div
+              v-if="item.slot.kind === 'line'"
+              class="line"
+              :class="lineClass(item.slot.index, 'after', rows[item.slot.index]!)"
+              :style="slotStyle(item.slotIndex)"
+            >
+              {{ rows[item.slot.index]?.after ?? "" }}
+            </div>
+            <button
+              v-else
+              type="button"
+              class="line fold"
+              :class="{ hit: foldHit(item.slot.start, item.slot.end) }"
+              :style="slotStyle(item.slotIndex)"
+              @click="toggleFold(item.slot.key)"
+            >
+              {{ foldLabel(item.slot) }}
+            </button>
+          </template>
         </div>
       </div>
     </div>

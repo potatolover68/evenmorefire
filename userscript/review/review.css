@@ -81,6 +81,16 @@ body {
 .line.hit {
   box-shadow: inset 4px 0 0 #c80;
 }
+button.line.fold {
+  border: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  text-align: center;
+  color: #555;
+  background: #f3f3f3;
+  font: 13px/18px monospace;
+}
 .bar {
   position: absolute;
   cursor: default;

@@ -231,7 +231,9 @@ async function processJob(host: CleanupHost, job: PageJob): Promise<void> {
     }
     if (await maybeProd(host, job)) return;
     if (!host.running || host.session.jobs[job.title] !== job) return;
-    const history = await fetchHistory(job.title);
+    const oldest = anchorFromMetas(host, job);
+    if (oldest == null) throw new Error("No tainted revisions");
+    const history = await fetchHistory(job.title, oldest);
     if (host.session.jobs[job.title] !== job) return;
     job.anchorRevid = earliestRevid(history, job.taintedRevids);
     const result = await cleanTaintedHistory(history, job.taintedRevids, {

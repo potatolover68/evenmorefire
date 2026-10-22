@@ -85,6 +85,24 @@ describe("invariants", () => {
     expect(cleanTaintedHistory(revisions, [4, 9])).toEqual(once);
   });
 
+  it("keeps a paragraph when a tainted edit only inserts a line and is reverted", () => {
+    const paragraph =
+      "A day after the attack, the governor called a meeting.";
+    const image =
+      '[[File:CJNG_Logo.svg|right|thumb|250x250px|Logo of the Jalisco New Generation Cartel (CJNG)]]';
+    const parent = `${paragraph}\n\n== Background ==\n\nNext.\n`;
+    const edited = `${paragraph}\n${image}\n\n== Background ==\n\nNext.\n`;
+    const result = cleanTaintedHistory(
+      [
+        { revid: 1, content: parent },
+        { revid: 2, content: edited },
+        { revid: 3, content: parent },
+      ],
+      [2],
+    );
+    expect(result.content).toBe(parent);
+  });
+
   it("rolls back when every tainted edit is among the latest", () => {
     const revisions: Revision[] = [
       { revid: 1, content: "Alpha." },

@@ -126,7 +126,7 @@ export function analyze(
   };
   const claimParagraph = (paragraph: ParagraphObj) => {
     paragraph.claimedGen = gen;
-    for (const sentence of paragraph.sentences) sentence.claimedGen = gen;
+    for (const sentence of paragraph.sentences) claimSentence(sentence);
   };
   const paragraphClaimable = (paragraph: ParagraphObj) => {
     if (paragraph.claimedGen === gen) return false;

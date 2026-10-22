@@ -75,10 +75,39 @@ export async function fetchContributions(
   return contribs;
 }
 
-export async function fetchHistory(title: string): Promise<Revision[]> {
-  const revisions: Revision[] = [];
+/** Revisions from `behind` before `oldestRevid` through the latest revision. */
+export async function fetchHistory(
+  title: string,
+  oldestRevid: number,
+  behind = 50,
+): Promise<Revision[]> {
+  const byId = new Map<number, Revision>();
+  await collectRevisions(
+    title,
+    { rvdir: "older", rvstartid: String(oldestRevid) },
+    behind + 1,
+    byId,
+  );
+  await collectRevisions(
+    title,
+    { rvdir: "newer", rvstartid: String(oldestRevid) },
+    Number.POSITIVE_INFINITY,
+    byId,
+  );
+  return [...byId.values()].sort(
+    (a, b) =>
+      (a.timestamp ?? "").localeCompare(b.timestamp ?? "") || a.revid - b.revid,
+  );
+}
+
+async function collectRevisions(
+  title: string,
+  direction: { rvdir: string; rvstartid: string },
+  limit: number,
+  into: Map<number, Revision>,
+): Promise<void> {
   let rvcontinue: string | undefined;
-  do {
+  while (into.size < limit) {
     const data = await wikiApi().get(
       cleanParams({
         action: "query",
@@ -90,26 +119,26 @@ export async function fetchHistory(title: string): Promise<Revision[]> {
         rvcontinue,
         format: "json",
         formatversion: "2",
+        ...direction,
       }),
     );
     assertOk(data);
     const page = pageList(data)[0];
+    let added = 0;
     for (const rev of (page?.revisions ?? []) as Record<string, any>[]) {
-      if (typeof rev.revid !== "number") continue;
-      revisions.push({
+      if (typeof rev.revid !== "number" || into.has(rev.revid)) continue;
+      into.set(rev.revid, {
         revid: rev.revid,
         timestamp:
           typeof rev.timestamp === "string" ? rev.timestamp : undefined,
         content: slotContent(rev),
       });
+      added += 1;
+      if (into.size >= limit) return;
     }
     rvcontinue = data.continue?.rvcontinue as string | undefined;
-  } while (rvcontinue);
-  revisions.sort(
-    (a, b) =>
-      (a.timestamp ?? "").localeCompare(b.timestamp ?? "") || a.revid - b.revid,
-  );
-  return revisions;
+    if (!rvcontinue || added === 0) return;
+  }
 }
 
 export async function latestRevision(
