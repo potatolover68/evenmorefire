@@ -1,5 +1,6 @@
 import { fetchAllowlist, isAllowlisted } from "./allowlist.ts";
 import { openJob, runQueue, syncJobs, type CleanupHost } from "./cleanup.ts";
+import { bootHistory } from "./history.ts";
 import {
   bindRowToggles,
   clearRowPaint,
@@ -31,13 +32,19 @@ import {
 
 export function boot(): void {
   if (typeof mw === "undefined" || typeof Morebits === "undefined") return;
-  if (mw.config.get("wgCanonicalSpecialPageName") !== "Contributions") return;
   const viewer = mw.config.get("wgUserName");
   if (typeof viewer !== "string" || !viewer) return;
-  const user = targetUser();
-  if (!user) return;
+  const special = mw.config.get("wgCanonicalSpecialPageName");
+  const action = mw.config.get("wgAction");
+  if (special !== "Contributions" && action !== "history") return;
   void fetchAllowlist().then((names) => {
     if (!isAllowlisted(viewer, names)) return;
+    if (action === "history") {
+      bootHistory();
+      return;
+    }
+    const user = targetUser();
+    if (!user) return;
     start(user);
   });
 }

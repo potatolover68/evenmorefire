@@ -26,6 +26,7 @@ import {
 } from "./review-cache.ts";
 import { editSummary, prodTemplate } from "./summary.ts";
 import type { CleanupReason, PageJob, Session } from "./types.ts";
+import { defaultCleanup, emptySession } from "./types.ts";
 import { authorshipPercent } from "./wikiwho.ts";
 
 export interface CleanupHost {
@@ -152,6 +153,64 @@ function hasPendingElsewhere(
       job.status === "processed"
     );
   });
+}
+
+export async function reviewSelection(
+  title: string,
+  revids: number[],
+  metas: Record<string, string>,
+  cleanup: { reason: Exclude<CleanupReason, "">; summary: string },
+  report: (text: string) => void,
+): Promise<void> {
+  const session = emptySession("history");
+  session.cleanup = {
+    ...defaultCleanup(),
+    reason: cleanup.reason,
+    summary: cleanup.summary,
+  };
+  const ids = [...revids].sort((a, b) => a - b);
+  for (const revid of ids) {
+    session.metas[String(revid)] = {
+      title,
+      timestamp: metas[String(revid)] || String(revid).padStart(12, "0"),
+      isNew: false,
+      pageid: null,
+      ns: 0,
+    };
+  }
+  const job: PageJob = {
+    title,
+    status: "pending",
+    taintedRevids: ids,
+    isNew: false,
+    pageid: null,
+    anchorRevid: null,
+    content: null,
+    explanations: [],
+    baseRevid: null,
+    baseTimestamp: null,
+    savedRevid: null,
+  };
+  session.jobs[title] = job;
+  const host: CleanupHost = {
+    user: "",
+    session,
+    running: true,
+    setRunning() {},
+    persist() {
+      return Promise.resolve();
+    },
+    refresh() {
+      report(job.status === "processing" ? "Reading history…" : job.status);
+    },
+  };
+  await processJob(host, job);
+  if (job.status === "skipped") {
+    report("Nothing to remove.");
+    return;
+  }
+  await openJob(host, title);
+  report("Review opened.");
 }
 
 export async function openJob(host: CleanupHost, title: string): Promise<void> {
