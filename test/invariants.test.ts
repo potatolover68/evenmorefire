@@ -103,6 +103,81 @@ describe("invariants", () => {
     expect(result.content).toBe(parent);
   });
 
+  it("rolls through a bot edit in the middle of a tainted run", () => {
+    const before = "Orders were 20.";
+    const during = "Orders were 45.";
+    const bottled = "Orders were 45. {{cite web|url=https://example.com}}";
+    const after = "Orders were 30. {{cite web|url=https://example.com}}";
+    const result = cleanTaintedHistory(
+      [
+        { revid: 1, content: before },
+        { revid: 2, content: during, user: "JannisGe" },
+        {
+          revid: 3,
+          content: bottled,
+          user: "AnomieBOT",
+          bot: true,
+          comment: "Substing templates: {{Internetquelle}}",
+        },
+        { revid: 4, content: after, user: "JannisGe" },
+      ],
+      [2, 4],
+    );
+    expect(result.content).toBe(before);
+  });
+
+  it("rolls through IABot, Citation bot, reFill 2, and ProveIt", () => {
+    const cases = [
+      { tags: ["OAuth CID: 678"] },
+      { tags: ["OAuth CID: 2922"] },
+      { comment: "Filled in 2 bare reference(s) with reFill 2" },
+      {
+        comment:
+          "Reference edited with [[Wikipedia:ProveIt|ProveIt]] #proveit",
+      },
+    ];
+    for (const maintenance of cases) {
+      const result = cleanTaintedHistory(
+        [
+          { revid: 1, content: "Alpha." },
+          { revid: 2, content: "Alpha. Tainted." },
+          { revid: 3, content: "Alpha. Tainted. Maintained.", ...maintenance },
+          { revid: 4, content: "Alpha. Tainted. Maintained. Later." },
+        ],
+        [2, 4],
+      );
+      expect(result.content).toBe("Alpha.");
+    }
+  });
+
+  it("rolls through a reFill edit but stops at another editor", () => {
+    const result = cleanTaintedHistory(
+      [
+        { revid: 1, content: "Alpha." },
+        { revid: 2, content: "Alpha. Tainted." },
+        {
+          revid: 3,
+          content: "Alpha. Tainted.<ref>https://example.com</ref>",
+          user: "Someone",
+          comment: "Refilled 1 reference using reFill",
+        },
+        { revid: 4, content: "Alpha. Tainted.<ref>https://example.com</ref> More." },
+      ],
+      [2, 4],
+    );
+    expect(result.content).toBe("Alpha.");
+    const stopped = cleanTaintedHistory(
+      [
+        { revid: 1, content: "Alpha." },
+        { revid: 2, content: "Alpha. Tainted." },
+        { revid: 3, content: "Alpha. Tainted. Noted.", user: "Ich-Du-De" },
+        { revid: 4, content: "Alpha. Tainted. Noted. Later." },
+      ],
+      [2, 4],
+    );
+    expect(stopped.content).not.toBe("Alpha.");
+  });
+
   it("rolls back when every tainted edit is among the latest", () => {
     const revisions: Revision[] = [
       { revid: 1, content: "Alpha." },

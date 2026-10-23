@@ -36,6 +36,12 @@ export interface Revision {
   content: string | null;
   /** ISO timestamp, when the caller knows it. */
   timestamp?: string;
+  user?: string;
+  comment?: string;
+  /** MediaWiki bot flag. */
+  bot?: boolean;
+  /** Change tags, such as `OAuth CID: 678`. */
+  tags?: string[];
 }
 
 /** 1-based line positions, matching deprecated-parameter comments. */

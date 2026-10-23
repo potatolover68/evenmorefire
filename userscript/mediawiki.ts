@@ -113,7 +113,7 @@ async function collectRevisions(
         action: "query",
         prop: "revisions",
         titles: title,
-        rvprop: "ids|timestamp|content",
+        rvprop: "ids|timestamp|user|comment|flags|tags|content",
         rvslots: "main",
         rvlimit: "max",
         rvcontinue,
@@ -131,6 +131,12 @@ async function collectRevisions(
         revid: rev.revid,
         timestamp:
           typeof rev.timestamp === "string" ? rev.timestamp : undefined,
+        user: typeof rev.user === "string" ? rev.user : undefined,
+        comment: typeof rev.comment === "string" ? rev.comment : undefined,
+        bot: rev.bot === true,
+        tags: Array.isArray(rev.tags)
+          ? rev.tags.filter((tag: unknown): tag is string => typeof tag === "string")
+          : undefined,
         content: slotContent(rev),
       });
       added += 1;
