@@ -14,7 +14,7 @@ import { defaultFilters } from "../userscript/filters.ts";
 import type { FilterConfig, PageJob } from "../userscript/types.ts";
 import { countEdits } from "../userscript/types.ts";
 import { markArticleCompleted } from "../userscript/aic.ts";
-import { editSummary } from "../userscript/summary.ts";
+import { editSummary, prodTemplate } from "../userscript/summary.ts";
 import { tokenEditors } from "../userscript/wikiwho.ts";
 
 function contrib(patch: Partial<Contrib> = {}): Contrib {
@@ -142,6 +142,12 @@ describe("edit summaries", () => {
       "[[User:MSK/emf|emf!]]: removing suspected copyright violations. copy",
     );
     expect(editSummary("other", "note")).toBe("[[User:MSK/emf|emf!]]: note");
+  });
+
+  it("keeps the pipe template intact inside an LLMPROD tag", () => {
+    expect(prodTemplate("See [[Wikipedia:AI noticeboard/Kiilvish]]")).toBe(
+      "{{subst:Prod llm|reason=[[WP:LLMPRV{{!}}presumptive removal of AI-generated content]]. See [[Wikipedia:AI noticeboard/Kiilvish]]}}",
+    );
   });
 });
 
@@ -294,6 +300,7 @@ describe("queue counts", () => {
         job("skipped", [3]),
         job("flagged", [4]),
         job("review", [5, 6, 7]),
+        job("prod", [9]),
         job("pending", [8]),
       ]),
     ).toEqual({
@@ -301,7 +308,8 @@ describe("queue counts", () => {
       skipped: 1,
       flagged: 1,
       review: 3,
-      total: 8,
+      prod: 1,
+      total: 9,
     });
   });
 });

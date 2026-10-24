@@ -32,6 +32,8 @@ export interface DialogController {
   previous(): void;
   resume(): void;
   pause(): void;
+  /** Close the wizard and drop its saved session. */
+  finish(): Promise<void>;
   /** Drop contribution highlights while the dialog is closed. */
   conceal(): void;
 }
@@ -44,7 +46,6 @@ export function ensureDialog(controller: DialogController): void {
   const existing = controller.dialog ? dialogElement(controller.dialog) : null;
   if (!controller.dialog || !existing || !document.body.contains(existing)) {
     const dialog = new Morebits.simpleWindow(720, 520);
-    dialog.setScriptName("even more fire!");
     dialog.setModality(false);
     controller.dialog = dialog;
     render(controller);
@@ -113,7 +114,12 @@ export function updateButtons(controller: DialogController): void {
     setDisabled(root, "previous", false);
     return;
   }
-  relabel(root, "resume", controller.running ? "Pause" : "Resume");
+  const finished = !controller.running && !hasPending(controller.session);
+  relabel(
+    root,
+    "resume",
+    controller.running ? "Pause" : finished ? "Done" : "Resume",
+  );
   const queueState = root.querySelector<HTMLElement>(
     '[name="queueState"] .quickformDescription',
   );
@@ -121,11 +127,7 @@ export function updateButtons(controller: DialogController): void {
     queueState.classList.add("emf-queue-stats");
     queueState.textContent = queueSummary(controller);
   }
-  setDisabled(
-    root,
-    "resume",
-    !controller.running && !hasPending(controller.session),
-  );
+  setDisabled(root, "resume", false);
   setDisabled(root, "previous", false);
 }
 
@@ -135,18 +137,31 @@ function queueSummary(controller: DialogController): string {
   const here = jobs.filter((job) => visible.has(job.title));
   const line = (label: string, group: typeof jobs) => {
     const counts = countEdits(group);
-    return `${label}: ${counts.applied} applied, ${counts.skipped} skipped, ${counts.flagged} flagged, ${counts.review} awaiting review, ${counts.total} total`;
+    const prod = counts.prod ? `, ${counts.prod} LLMPROD` : "";
+    return `${label}: ${counts.applied} applied, ${counts.skipped} skipped, ${counts.flagged} flagged${prod}, ${counts.review} awaiting review, ${counts.total} total`;
   };
+  const finished = !controller.running && !hasPending(controller.session);
   const running = controller.running
     ? "Processing selected pages."
-    : "Processing is paused.";
+    : finished
+      ? "Processing is finished."
+      : "Processing is paused.";
   return `${line("This contributions page", here)}\n${line("All contributions", jobs)}\n${running}`;
 }
 
 function render(controller: DialogController): void {
   const dialog = controller.dialog;
   if (!dialog) return;
+  dialog.setScriptName("even more fire!");
   dialog.setTitle(`step ${controller.session.step}`);
+  const title = dialogElement(dialog)?.querySelector(".morebits-dialog-title");
+  if (title) {
+    title.querySelector(".morebits-dialog-scriptname")?.remove();
+    const prefix = document.createElement("span");
+    prefix.className = "morebits-dialog-scriptname";
+    prefix.textContent = "even more fire! \u00B7 ";
+    title.prepend(prefix);
+  }
   const form = buildForm(controller);
   const node = form.render() as HTMLFormElement;
   for (const name of ["after", "before"]) {
@@ -470,6 +485,7 @@ function submit(controller: DialogController, event: Event): void {
   if (name === "previous") controller.previous();
   if (name === "resume") {
     if (controller.running) controller.pause();
+    else if (!hasPending(controller.session)) void controller.finish();
     else controller.resume();
   }
 }

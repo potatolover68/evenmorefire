@@ -12,6 +12,7 @@ export type JobStatus =
   | "processed"
   | "flagged"
   | "review"
+  | "prod"
   | "applied"
   | "skipped"
   | "undone";
@@ -136,6 +137,7 @@ export interface EditCounts {
   skipped: number;
   flagged: number;
   review: number;
+  prod: number;
   total: number;
 }
 
@@ -146,6 +148,7 @@ export function countEdits(jobs: readonly PageJob[]): EditCounts {
     skipped: 0,
     flagged: 0,
     review: 0,
+    prod: 0,
     total: 0,
   };
   for (const job of jobs) {
@@ -154,6 +157,7 @@ export function countEdits(jobs: readonly PageJob[]): EditCounts {
     if (job.status === "applied") counts.applied += edits;
     else if (job.status === "skipped") counts.skipped += edits;
     else if (job.status === "flagged") counts.flagged += edits;
+    else if (job.status === "prod") counts.prod += edits;
     else if (job.status === "review" || job.status === "processed") {
       counts.review += edits;
     }

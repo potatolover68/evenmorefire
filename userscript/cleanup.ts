@@ -65,8 +65,11 @@ export function syncJobs(session: Session): void {
     const ids = [...group.ids].sort((a, b) => a - b);
     const existing = session.jobs[title];
     const same = existing != null && sameIds(existing.taintedRevids, ids);
-    if (existing && same && existing.status !== "processing") {
-      existing.isNew = group.isNew;
+    if (
+      existing &&
+      (taggedForProd(existing) || (same && existing.status !== "processing"))
+    ) {
+      if (!taggedForProd(existing)) existing.isNew = group.isNew;
       existing.pageid = existing.pageid ?? group.pageid;
       next[title] = existing;
       continue;
@@ -276,6 +279,12 @@ export async function openJob(host: CleanupHost, title: string): Promise<void> {
 }
 
 async function processJob(host: CleanupHost, job: PageJob): Promise<void> {
+  if (taggedForProd(job)) {
+    job.status = "prod";
+    await host.persist();
+    host.refresh();
+    return;
+  }
   job.status = "processing";
   await host.persist();
   host.refresh();
@@ -300,6 +309,12 @@ async function processJob(host: CleanupHost, job: PageJob): Promise<void> {
       return;
     }
     if (await maybeProd(host, job)) return;
+    if (taggedForProd(job)) {
+      job.status = "prod";
+      await host.persist();
+      host.refresh();
+      return;
+    }
     if (!host.running || host.session.jobs[job.title] !== job) return;
     const oldest = anchorFromMetas(host, job);
     if (oldest == null) throw new Error("No tainted revisions");
@@ -373,6 +388,12 @@ async function processJob(host: CleanupHost, job: PageJob): Promise<void> {
     await host.persist();
     host.refresh();
   } catch (error) {
+    if (taggedForProd(job)) {
+      job.status = "prod";
+      await host.persist();
+      host.refresh();
+      return;
+    }
     if (!host.running) {
       job.status = "pending";
       await host.persist();
@@ -386,6 +407,13 @@ async function processJob(host: CleanupHost, job: PageJob): Promise<void> {
     await host.persist();
     host.refresh();
   }
+}
+
+function taggedForProd(job: PageJob): boolean {
+  return (
+    job.status === "prod" ||
+    job.explanations.some((item) => item.action === "llm-prod")
+  );
 }
 
 const PROD_CATEGORY = "Category:AI-generated content proposed for deletion";
@@ -446,7 +474,7 @@ async function maybeProd(host: CleanupHost, job: PageJob): Promise<boolean> {
   scheduleReview(job.title, latest.content, latest.revid, job.content);
   const automatic = cleanup.llmprodAuto && !cleanup.revdel;
   if (!automatic) {
-    job.status = "review";
+    job.status = "prod";
     await host.persist();
     host.refresh();
     return true;
@@ -551,7 +579,7 @@ function yieldJob(host: CleanupHost, job: PageJob): Promise<boolean> {
     return Promise.resolve(false);
   }
   if (host.session.jobs[job.title] !== job) return Promise.resolve(true);
-  job.status = "pending";
+  job.status = taggedForProd(job) ? "prod" : "pending";
   return host.persist().then(() => {
     host.refresh();
     return true;

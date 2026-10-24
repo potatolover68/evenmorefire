@@ -266,6 +266,17 @@ class App implements DialogController {
     updateButtons(this);
   }
 
+  async finish(): Promise<void> {
+    this.running = false;
+    this.session.autoAdvance = false;
+    const key = this.session.key;
+    this.dialog?.close(new Event("click"));
+    await deleteSession(key);
+    this.session = emptySession(key);
+    this.persisted = false;
+    this.conceal();
+  }
+
   private reposition(): void {
     requestAnimationFrame(() => {
       resetDialogPosition(this);

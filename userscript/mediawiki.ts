@@ -243,27 +243,43 @@ export async function userEditorKeys(user: string): Promise<Set<string>> {
   return new Set([`0|${user}`]);
 }
 
+const SUBST = /{{\s*(?:safe)?subst:/i;
+
 export async function expandWikitext(
   title: string,
   text: string,
 ): Promise<string> {
   let current = text;
   for (let pass = 0; pass < 6; pass++) {
-    if (!/{{\s*(?:safe)?subst:/i.test(current)) return current;
+    if (!SUBST.test(current)) break;
     const data = await wikiApi().post({
-      action: "expandtemplates",
+      action: "parse",
       title,
       text: current,
+      contentmodel: "wikitext",
+      onlypst: "1",
       prop: "wikitext",
       format: "json",
       formatversion: "2",
     });
     assertOk(data);
-    const wikitext = data.expandtemplates?.wikitext;
-    if (typeof wikitext !== "string" || wikitext === current) return current;
+    const wikitext = pstWikitext(data);
+    if (wikitext == null || wikitext === current || /^\s*</.test(wikitext)) break;
     current = wikitext;
   }
-  return current;
+  // A leftover subst tag must keep {{!}}, or the pipe splits its parameters.
+  return SUBST.test(current) ? current : pipesInLinks(current);
+}
+
+function pstWikitext(data: Record<string, any>): string | null {
+  const text = data.parse?.text;
+  if (typeof text === "string") return text;
+  if (text && typeof text["*"] === "string") return text["*"];
+  return null;
+}
+
+function pipesInLinks(text: string): string {
+  return text.replace(/\[\[[^\]]*\]\]/g, (link) => link.replaceAll("{{!}}", "|"));
 }
 
 export async function previewWikitext(

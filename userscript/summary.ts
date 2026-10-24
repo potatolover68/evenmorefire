@@ -20,5 +20,6 @@ export function prodTemplate(extra: string): string {
 }
 
 function escapeTemplate(value: string): string {
-  return value.replaceAll("|", "{{!}}").replaceAll("}}", "} }");
+  // Escape }} first. Doing it after the pipe replacement splits {{!}} into {{!} }.
+  return value.replaceAll("}}", "} }").replaceAll("|", "{{!}}");
 }
