@@ -247,20 +247,23 @@ export async function expandWikitext(
   title: string,
   text: string,
 ): Promise<string> {
-  const data = await wikiApi().get({
-    action: "expandtemplates",
-    title,
-    text,
-    prop: "wikitext",
-    format: "json",
-    formatversion: "2",
-  });
-  assertOk(data);
-  const wikitext = data.expandtemplates?.wikitext;
-  if (typeof wikitext !== "string" || wikitext.includes("{{subst:")) {
-    throw new WikiError("Could not expand the substituted template");
+  let current = text;
+  for (let pass = 0; pass < 6; pass++) {
+    if (!/{{\s*(?:safe)?subst:/i.test(current)) return current;
+    const data = await wikiApi().post({
+      action: "expandtemplates",
+      title,
+      text: current,
+      prop: "wikitext",
+      format: "json",
+      formatversion: "2",
+    });
+    assertOk(data);
+    const wikitext = data.expandtemplates?.wikitext;
+    if (typeof wikitext !== "string" || wikitext === current) return current;
+    current = wikitext;
   }
-  return wikitext;
+  return current;
 }
 
 export async function previewWikitext(

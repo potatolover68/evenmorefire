@@ -423,12 +423,18 @@ async function maybeProd(host: CleanupHost, job: PageJob): Promise<boolean> {
   if (!(percent > cleanup.llmprodPercent)) return false;
   const latest = await latestRevision(job.title);
   if (await yieldJob(host, job)) return true;
-  const banner = await expandWikitext(job.title, prodTemplate(cleanup.summary));
+  let banner = prodTemplate(cleanup.summary);
+  try {
+    const expanded = await expandWikitext(job.title, banner);
+    if (expanded.trim()) banner = expanded;
+  } catch {
+    // Keep the unsubstituted tag. The article text is still appended below.
+  }
   if (await yieldJob(host, job)) return true;
   job.baseRevid = latest.revid;
   job.baseTimestamp = new Date().toISOString();
   job.anchorRevid = anchorFromMetas(host, job);
-  job.content = `${banner}\n${latest.content}`;
+  job.content = `${banner.trim()}\n${latest.content}`;
   job.explanations = [
     {
       action: "llm-prod",
@@ -451,14 +457,16 @@ async function maybeProd(host: CleanupHost, job: PageJob): Promise<boolean> {
 }
 
 function expandProdBanner(title: string, text: string): Promise<string> {
-  const marker = "{{subst:";
-  const at = text.indexOf(marker);
+  const marker = /{{\s*(?:safe)?subst:/i;
+  const at = text.search(marker);
   if (at === -1) return Promise.resolve(text);
   const lineEnd = text.indexOf("\n", at);
   const banner = lineEnd === -1 ? text.slice(at) : text.slice(at, lineEnd);
+  const rest = lineEnd === -1 ? "" : text.slice(lineEnd + 1);
   return expandWikitext(title, banner).then((expanded) => {
-    const rest = lineEnd === -1 ? "" : text.slice(lineEnd + 1);
-    return rest ? `${expanded}\n${rest}` : expanded;
+    const tag = expanded.trim();
+    if (!rest) return tag;
+    return `${tag}\n${rest}`;
   });
 }
 
