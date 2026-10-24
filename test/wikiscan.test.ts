@@ -77,6 +77,32 @@ describe("wikiscan", () => {
     expect(outermostAtomic(open)[0]).toEqual({ start: 0, end: open.length });
   });
 
+  it("aligns the interior of a multiline template that contains a ref", () => {
+    const tokens = tokensOf(
+      "{{Infobox\n| name = Rafael<ref>{{cite web|title=Elections}}</ref>\n}}",
+    );
+    const spans = outermostAtomic(tokens);
+    const rafael = tokens.findIndex((token) => token.text === "Rafael");
+    expect(rafael).toBeGreaterThan(-1);
+    expect(
+      spans.some((span) => rafael >= span.start && rafael < span.end),
+    ).toBe(false);
+    const ref = spans.find((span) =>
+      tokens.slice(span.start, span.end).some((token) => token.text === "ref"),
+    );
+    expect(ref).toBeTruthy();
+    expect(
+      spans.some((span) => span.start === 0 && span.end === tokens.length),
+    ).toBe(false);
+
+    const plain = tokensOf("{{Infobox\n| a = 1\n}}");
+    expect(outermostAtomic(plain)).toEqual([{ start: 0, end: plain.length }]);
+    const inline = tokensOf("{{note|<ref>x</ref>}}");
+    expect(outermostAtomic(inline)).toEqual([{ start: 0, end: inline.length }]);
+    const note = tokensOf("{{note|Alpha}}");
+    expect(outermostAtomic(note)).toEqual([{ start: 0, end: note.length }]);
+  });
+
   it("does not look inside nowiki", () => {
     const tokens = tokensOf("<nowiki>{{not a template}}</nowiki>{{real}}");
     const scan = scanTokens(tokens);

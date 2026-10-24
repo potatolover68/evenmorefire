@@ -274,6 +274,59 @@ describe("invariants", () => {
     ).toBe(true);
   });
 
+  it("drops a citation rewrite that shares a sentence with tainted prose", () => {
+    const cite =
+      "<ref>{{cite web|url=https://example.com/values/t/3939/n6/5000807/p/2023/c79/2670/v/105|title=Municipal livestock survey|publisher=IBGE}}</ref>";
+    const rewritten =
+      "<ref>{{cite web|url=https://example.com/values/t/3939/n6/5000807/p/2023/c79/2670/v/105|title=Municipal livestock survey|publisher=IBGE|trans-title=Pesquisa da pecuaria municipal|archive-url=https://web.archive.org/web/20240101000000/https://example.com/values/t/3939|archive-date=1 January 2024|access-date=1 June 2024}}</ref>";
+    const result = cleanTaintedHistory(
+      [
+        { revid: 1, content: `The cattle herd was 227106 head.${cite}` },
+        { revid: 2, content: `The cattle herd was 227106 head.${rewritten}` },
+      ],
+      [1],
+    );
+    expect(result.content).not.toContain("227106");
+    expect(result.content).not.toContain("cite web");
+    expect(result.content).not.toContain("trans-title");
+  });
+
+  it("drops a tainted infobox parameter when the later edit only rewrites its ref", () => {
+    const before = `{{Infobox settlement
+| leader_name = Rafael Hamamoto<ref>{{cite web|title=Elections|url=https://example.com}}</ref>
+}}`;
+    const after = `{{Infobox settlement
+| leader_name = Rafael Hamamoto<ref>{{cite web|title=Elections|url=https://example.com|trans-title=Elections}}</ref>
+}}`;
+    const result = cleanTaintedHistory(
+      [
+        { revid: 1, content: before },
+        { revid: 2, content: after },
+      ],
+      [1],
+    );
+    expect(result.content).not.toContain("Rafael");
+    expect(result.content).not.toContain("trans-title");
+  });
+
+  it("leaves a reference-only sentence unscored", () => {
+    const result = cleanTaintedHistory(
+      [
+        {
+          revid: 1,
+          content: "<ref>{{cite web|title=Survey|url=https://example.com}}</ref>",
+        },
+        {
+          revid: 2,
+          content:
+            "<ref>{{cite web|title=Inquiry|url=https://example.com}}</ref>",
+        },
+      ],
+      [1],
+    );
+    expect(result.content).toContain("Inquiry");
+  });
+
   it("keeps a tainted exact revert from restoring vandalism", () => {
     const revisions: Revision[] = [
       { revid: 1, content: "Hello." },

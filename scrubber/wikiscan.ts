@@ -313,22 +313,64 @@ export function outermostAtomic(tokens: readonly ScanToken[]): AtomicSpan[] {
   tokens.forEach((token, index) => idToIndex.set(token.id, index));
   const scan = scanTokens(tokens);
   const spans: AtomicSpan[] = [];
-  const push = (openerId: number, closerId: number | null) => {
+  const push = (openerId: number, closerId: number | null, kind: string) => {
     const start = idToIndex.get(openerId);
     if (start === undefined) return;
     const end =
       closerId === null ? tokens.length : (idToIndex.get(closerId) ?? -1) + 1;
     if (end <= start) return;
+    if (
+      kind === "template" &&
+      hidesTemplateInterior(tokens, scan, idToIndex, start, end)
+    ) {
+      return;
+    }
     spans.push({ start, end });
   };
   for (const pair of scan.pairs) {
     if (pair.kind === "tag") {
       if (pair.tag !== "nowiki") continue;
-    } else if (!ATOMIC_KINDS.has(pair.kind)) continue;
-    push(pair.openerId, pair.closerId);
+      push(pair.openerId, pair.closerId, "nowiki");
+    } else if (ATOMIC_KINDS.has(pair.kind)) {
+      push(pair.openerId, pair.closerId, pair.kind);
+    }
   }
-  for (const open of scan.unclosed) push(open.openerId, null);
+  for (const open of scan.unclosed) push(open.openerId, null, open.kind);
   return keepOutermost(spans);
+}
+
+/** A multiline template that contains a ref is aligned on its interior. */
+function hidesTemplateInterior(
+  tokens: readonly ScanToken[],
+  scan: ScanResult,
+  idToIndex: ReadonlyMap<number, number>,
+  start: number,
+  end: number,
+): boolean {
+  const last = Math.min(end, tokens.length);
+  let newline = false;
+  for (let i = start; i < last; i++) {
+    const token = tokens[i]!;
+    if (token.text.includes("\n")) {
+      newline = true;
+      break;
+    }
+    if (i + 1 < last && token.gapAfter.includes("\n")) {
+      newline = true;
+      break;
+    }
+  }
+  if (!newline) return false;
+  for (const ref of scan.refs) {
+    const opener = idToIndex.get(ref.openerId);
+    if (opener !== undefined && opener > start && opener < end) return true;
+  }
+  for (const open of scan.unclosed) {
+    if (open.kind !== "ref") continue;
+    const opener = idToIndex.get(open.openerId);
+    if (opener !== undefined && opener > start && opener < end) return true;
+  }
+  return false;
 }
 
 function keepOutermost(spans: readonly AtomicSpan[]): AtomicSpan[] {

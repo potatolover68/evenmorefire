@@ -2,6 +2,7 @@ import type { Analysis } from "./provenance";
 import { applySplices, renderText, type Splice } from "./render";
 import { splitDocument } from "./split";
 import type { Note, ResolvedOptions, StreamItem, Token } from "./types";
+import { scanTokens } from "./wikiscan";
 
 export interface DerivativeCtx {
   tainted: ReadonlySet<number>;
@@ -24,10 +25,12 @@ export function passDerivative(
   for (const sentence of ctx.finalSentences) {
     if (sentence.length === 0) continue;
     if (!sentence.some((token) => ctx.droppedFinalIds.has(token.id))) continue;
-    const taintedCount = sentence.filter((token) =>
+    const prose = outsideRefs(sentence);
+    if (prose.length === 0) continue;
+    const taintedCount = prose.filter((token) =>
       ctx.tainted.has(token.origin),
     ).length;
-    const ratio = taintedCount / sentence.length;
+    const ratio = taintedCount / prose.length;
     const ids = new Set(sentence.map((token) => token.id));
     const positions = items.flatMap((item, index) =>
       ids.has(item.tokenId) ? [index] : [],
@@ -107,6 +110,23 @@ function paraphraseFlags(
     flags.push({ action: "flag-paraphrase", start, end: start + slice.length });
   }
   return flags;
+}
+
+/** Tokens outside `<ref>` constructs. A citation does not decide the sentence. */
+function outsideRefs(sentence: readonly Token[]): Token[] {
+  const scan = scanTokens(
+    sentence.map((token) => ({
+      id: token.id,
+      text: token.value,
+      gapAfter: "",
+    })),
+  );
+  const cited = new Set<number>();
+  for (const ref of scan.refs) {
+    for (const id of ref.tokenIds) cited.add(id);
+  }
+  if (cited.size === 0) return sentence.slice();
+  return sentence.filter((token) => !cited.has(token.id));
 }
 
 function formatRatio(ratio: number): string {
