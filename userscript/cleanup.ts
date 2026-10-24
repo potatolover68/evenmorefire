@@ -12,6 +12,7 @@ import {
   latestRevision,
   latestRevisionId,
   pageIdOf,
+  pageCreationRevid,
   readPage,
   revisionIdsBetween,
   savePage,
@@ -279,6 +280,16 @@ async function processJob(host: CleanupHost, job: PageJob): Promise<void> {
   await host.persist();
   host.refresh();
   try {
+    if (
+      !job.isNew &&
+      host.session.cleanup.llmprod &&
+      host.session.cleanup.reason === "AI"
+    ) {
+      const created = await pageCreationRevid(job.title);
+      if (created != null && job.taintedRevids.includes(created)) {
+        job.isNew = true;
+      }
+    }
     if (job.isNew && (await hasCategory(job.title, PROD_CATEGORY))) {
       job.status = "skipped";
       job.explanations = [
@@ -334,6 +345,22 @@ async function processJob(host: CleanupHost, job: PageJob): Promise<void> {
       !flagged;
     if (!host.running) {
       job.status = "pending";
+      await host.persist();
+      host.refresh();
+      return;
+    }
+    if (
+      auto &&
+      job.isNew &&
+      host.session.cleanup.llmprod &&
+      result.content.trim() === ""
+    ) {
+      job.content = latest?.content ?? "";
+      job.status = "review";
+      job.explanations = [
+        ...result.explanations,
+        note("Did not blank this page creation"),
+      ];
       await host.persist();
       host.refresh();
       return;
@@ -411,7 +438,7 @@ async function maybeProd(host: CleanupHost, job: PageJob): Promise<boolean> {
     },
   ];
   scheduleReview(job.title, latest.content, latest.revid, job.content);
-  const automatic = cleanup.auto && !cleanup.revdel && cleanup.reason === "AI";
+  const automatic = cleanup.llmprodAuto && !cleanup.revdel;
   if (!automatic) {
     job.status = "review";
     await host.persist();

@@ -399,6 +399,18 @@ function appendCleanup(
     max: 100,
     disabled: lockProd || !cleanup.llmprod,
   });
+  form.append({
+    type: "checkbox",
+    list: [
+      {
+        name: "llmprodAuto",
+        value: "yes",
+        label: "Automatically apply LLMPRODs",
+        checked: cleanup.llmprodAuto && cleanup.llmprod && !lockProd,
+        disabled: lockProd || !cleanup.llmprod,
+      },
+    ],
+  });
   form.append({ type: "submit", name: "next", label: "Next step" });
   form.append({ type: "submit", name: "save", label: "Save" });
   form.append({ type: "submit", name: "previous", label: "Previous step" });
@@ -535,6 +547,7 @@ function readCleanup(form: HTMLFormElement): {
       reason,
       llmprod,
       llmprodPercent: percent,
+      llmprodAuto: llmprod && box(form, "llmprodAuto"),
     },
   };
 }
@@ -559,11 +572,12 @@ function enforceLocks(form: HTMLFormElement): void {
   lock(form, "auto", lockAuto);
   lock(form, "llmprod", lockProd);
   const prod = form.querySelector<HTMLInputElement>('input[name="llmprod"]');
+  const prodOn = !lockProd && !!prod?.checked && !prod.disabled;
+  lock(form, "llmprodAuto", !prodOn);
   const percent = form.querySelector<HTMLInputElement>(
     'input[name="llmprodPercent"]',
   );
-  if (percent)
-    percent.disabled = lockProd || !prod?.checked || !!prod?.disabled;
+  if (percent) percent.disabled = !prodOn;
 }
 
 function lock(form: HTMLFormElement, name: string, locked: boolean): void {

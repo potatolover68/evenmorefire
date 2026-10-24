@@ -170,6 +170,24 @@ export async function latestRevision(
   return { revid: rev.revid, content: slotContent(rev) ?? "" };
 }
 
+export async function pageCreationRevid(title: string): Promise<number | null> {
+  const data = await wikiApi().get({
+    action: "query",
+    prop: "revisions",
+    titles: title,
+    rvdir: "newer",
+    rvlimit: "1",
+    rvprop: "ids",
+    format: "json",
+    formatversion: "2",
+  });
+  assertOk(data);
+  const rev = pageList(data)[0]?.revisions?.[0] as
+    | Record<string, any>
+    | undefined;
+  return typeof rev?.revid === "number" ? rev.revid : null;
+}
+
 export async function latestRevisionId(title: string): Promise<number> {
   const data = await wikiApi().get({
     action: "query",

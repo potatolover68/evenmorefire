@@ -41,6 +41,7 @@ export interface CleanupConfig {
   reason: CleanupReason;
   llmprod: boolean;
   llmprodPercent: number | null;
+  llmprodAuto: boolean;
 }
 
 export interface RevisionMeta {
@@ -93,6 +94,7 @@ export function defaultCleanup(): CleanupConfig {
     reason: "",
     llmprod: false,
     llmprodPercent: null,
+    llmprodAuto: false,
   };
 }
 
@@ -174,5 +176,6 @@ function normalizeCleanup(config: CleanupConfig): CleanupConfig {
     reason: config.reason,
     llmprod: config.llmprod,
     llmprodPercent: config.llmprodPercent,
+    llmprodAuto: config.llmprodAuto === true,
   };
 }
