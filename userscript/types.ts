@@ -13,6 +13,7 @@ export type JobStatus =
   | "flagged"
   | "review"
   | "prod"
+  | "aitag"
   | "applied"
   | "skipped"
   | "undone";
@@ -43,6 +44,11 @@ export interface CleanupConfig {
   llmprod: boolean;
   llmprodPercent: number | null;
   llmprodAuto: boolean;
+  /** Tag a creation instead of scrubbing it. */
+  aiTag: boolean;
+  aiTagPercent: number | null;
+  /** Leave bot and maintenance edits in place. */
+  keepBots: boolean;
 }
 
 export interface RevisionMeta {
@@ -96,6 +102,9 @@ export function defaultCleanup(): CleanupConfig {
     llmprod: false,
     llmprodPercent: null,
     llmprodAuto: false,
+    aiTag: false,
+    aiTagPercent: null,
+    keepBots: false,
   };
 }
 
@@ -138,6 +147,7 @@ export interface EditCounts {
   flagged: number;
   review: number;
   prod: number;
+  aitag: number;
   total: number;
 }
 
@@ -149,6 +159,7 @@ export function countEdits(jobs: readonly PageJob[]): EditCounts {
     flagged: 0,
     review: 0,
     prod: 0,
+    aitag: 0,
     total: 0,
   };
   for (const job of jobs) {
@@ -158,6 +169,7 @@ export function countEdits(jobs: readonly PageJob[]): EditCounts {
     else if (job.status === "skipped") counts.skipped += edits;
     else if (job.status === "flagged") counts.flagged += edits;
     else if (job.status === "prod") counts.prod += edits;
+    else if (job.status === "aitag") counts.aitag += edits;
     else if (job.status === "review" || job.status === "processed") {
       counts.review += edits;
     }
@@ -181,5 +193,8 @@ function normalizeCleanup(config: CleanupConfig): CleanupConfig {
     llmprod: config.llmprod,
     llmprodPercent: config.llmprodPercent,
     llmprodAuto: config.llmprodAuto === true,
+    aiTag: config.aiTag === true,
+    aiTagPercent: config.aiTagPercent ?? null,
+    keepBots: config.keepBots === true,
   };
 }

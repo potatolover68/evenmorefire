@@ -26,6 +26,7 @@ export const ACTION_LABELS: Record<Action | "deprecated-param", string> = {
 
 const EXTRA_LABELS: Record<string, string> = {
   "llm-prod": "Tagged a page creation for presumptive deletion",
+  "ai-tag": "Tagged a page creation as AI-generated",
   "remove-naked-table": "Removed table rows that were no longer inside a table",
 };
 
@@ -171,6 +172,12 @@ export function actionPieces(
       return [
         {
           text: `Tagged a page creation for presumptive deletion${fields.other[0] ? ` (${fields.other[0]})` : ""}`,
+        },
+      ];
+    case "ai-tag":
+      return [
+        {
+          text: `Tagged a page creation as AI-generated${fields.other[0] ? ` (${fields.other[0]})` : ""}`,
         },
       ];
     default:

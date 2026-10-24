@@ -103,6 +103,27 @@ describe("invariants", () => {
     expect(result.content).toBe(parent);
   });
 
+  it("keeps a bot edit underneath a tainted suffix", () => {
+    const clean = "Alpha.";
+    const bottled = "Alpha. {{cite web|url=https://example.com}}";
+    const tainted = `${bottled} Tainted.`;
+    const revisions: Revision[] = [
+      { revid: 1, content: clean },
+      {
+        revid: 2,
+        content: bottled,
+        user: "Zackbot",
+        bot: true,
+        comment: "fixing deprecated parameters",
+      },
+      { revid: 3, content: tainted, user: "Jvguidi" },
+    ];
+    expect(cleanTaintedHistory(revisions, [3]).content).toBe(bottled);
+    expect(cleanTaintedHistory(revisions, [3], { keepBots: true }).content).toBe(
+      bottled,
+    );
+  });
+
   it("rolls through a bot edit in the middle of a tainted run", () => {
     const before = "Orders were 20.";
     const during = "Orders were 45.";
@@ -124,6 +145,30 @@ describe("invariants", () => {
       [2, 4],
     );
     expect(result.content).toBe(before);
+  });
+
+  it("keeps a bot citation when bot edits must not be undone", () => {
+    const before = "Orders were 20.";
+    const during = "Orders were 45.";
+    const bottled = "Orders were 45. {{cite web|url=https://example.com}}";
+    const after = "Orders were 30. {{cite web|url=https://example.com}}";
+    const revisions: Revision[] = [
+      { revid: 1, content: before },
+      { revid: 2, content: during, user: "JannisGe" },
+      {
+        revid: 3,
+        content: bottled,
+        user: "AnomieBOT",
+        bot: true,
+        comment: "Substing templates: {{Internetquelle}}",
+      },
+      { revid: 4, content: after, user: "JannisGe" },
+    ];
+    const result = cleanTaintedHistory(revisions, [2, 4], { keepBots: true });
+    expect(result.content).toContain("{{cite web|url=https://example.com}}");
+    expect(result.content).toContain("20");
+    expect(result.content).not.toContain("45");
+    expect(result.content).not.toContain("30");
   });
 
   it("rolls through IABot, Citation bot, reFill 2, and ProveIt", () => {

@@ -6,8 +6,9 @@ export const PAGE_CSS = `
 .emf-status-processing { color: #4682b4; }
 .emf-status-processed { color: #31628f; }
 .emf-status-flagged, .emf-status-review { color: #ff4500; font-weight: bold; }
-.emf-status-applied, .emf-status-prod.emf-status-applied { color: #228b22; }
+.emf-status-applied, .emf-status-prod.emf-status-applied, .emf-status-aitag.emf-status-applied { color: #228b22; }
 .emf-status-prod { color: #6f42c1; font-weight: bold; }
+.emf-status-aitag { color: #0b7285; font-weight: bold; }
 .emf-status-skipped { color: #72777d; }
 .emf-status-undone { color: #ff4500; }
 .emf-namespaces div, .emf-creations > div { display: inline-block; margin-right: 0.75em; }

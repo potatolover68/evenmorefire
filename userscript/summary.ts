@@ -19,6 +19,16 @@ export function prodTemplate(extra: string): string {
   return `{{subst:Prod llm|reason=${escapeTemplate(prodReason(extra))}}}`;
 }
 
+export function aiTagReason(extra: string): string {
+  const tail = extra.trim();
+  const base = "This article appears to be AI-generated";
+  return tail ? `${base}. ${tail}` : base;
+}
+
+export function aiTagTemplate(extra: string): string {
+  return `{{subst:AI-generated|reason=${escapeTemplate(aiTagReason(extra))}}}`;
+}
+
 function escapeTemplate(value: string): string {
   // Escape }} first. Doing it after the pipe replacement splits {{!}} into {{!} }.
   return value.replaceAll("}}", "} }").replaceAll("|", "{{!}}");

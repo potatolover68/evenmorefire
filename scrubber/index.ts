@@ -104,7 +104,12 @@ export function cleanTaintedHistory(
   }
 
   const reverts = revertRevids(revisions);
-  const rollback = trivialRollback(revisions, tainted, reverts);
+  const rollback = trivialRollback(
+    revisions,
+    tainted,
+    reverts,
+    options?.keepBots === true,
+  );
   if (rollback) {
     const explanations: Explanation[] = [];
     if (rollback.emptied) {

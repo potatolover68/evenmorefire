@@ -25,7 +25,7 @@ import {
   reviewInflight,
   scheduleReview,
 } from "./review-cache.ts";
-import { editSummary, prodTemplate } from "./summary.ts";
+import { aiTagTemplate, editSummary, prodTemplate } from "./summary.ts";
 import type { CleanupReason, PageJob, Session } from "./types.ts";
 import { defaultCleanup, emptySession } from "./types.ts";
 import { authorshipPercent } from "./wikiwho.ts";
@@ -67,9 +67,9 @@ export function syncJobs(session: Session): void {
     const same = existing != null && sameIds(existing.taintedRevids, ids);
     if (
       existing &&
-      (taggedForProd(existing) || (same && existing.status !== "processing"))
+      (sparedFromScrub(existing) || (same && existing.status !== "processing"))
     ) {
-      if (!taggedForProd(existing)) existing.isNew = group.isNew;
+      if (!sparedFromScrub(existing)) existing.isNew = group.isNew;
       existing.pageid = existing.pageid ?? group.pageid;
       next[title] = existing;
       continue;
@@ -279,10 +279,8 @@ export async function openJob(host: CleanupHost, title: string): Promise<void> {
 }
 
 async function processJob(host: CleanupHost, job: PageJob): Promise<void> {
-  if (taggedForProd(job)) {
-    job.status = "prod";
-    await host.persist();
-    host.refresh();
+  if (sparedFromScrub(job)) {
+    await park(host, job);
     return;
   }
   job.status = "processing";
@@ -291,8 +289,8 @@ async function processJob(host: CleanupHost, job: PageJob): Promise<void> {
   try {
     if (
       !job.isNew &&
-      host.session.cleanup.llmprod &&
-      host.session.cleanup.reason === "AI"
+      host.session.cleanup.reason === "AI" &&
+      (host.session.cleanup.llmprod || host.session.cleanup.aiTag)
     ) {
       const created = await pageCreationRevid(job.title);
       if (created != null && job.taintedRevids.includes(created)) {
@@ -306,13 +304,12 @@ async function processJob(host: CleanupHost, job: PageJob): Promise<void> {
       ];
       await host.persist();
       host.refresh();
+      await updateTracking(host, job.title, requireReason(host), "completed");
       return;
     }
     if (await maybeProd(host, job)) return;
-    if (taggedForProd(job)) {
-      job.status = "prod";
-      await host.persist();
-      host.refresh();
+    if (sparedFromScrub(job)) {
+      await park(host, job);
       return;
     }
     if (!host.running || host.session.jobs[job.title] !== job) return;
@@ -322,6 +319,7 @@ async function processJob(host: CleanupHost, job: PageJob): Promise<void> {
     if (host.session.jobs[job.title] !== job) return;
     job.anchorRevid = earliestRevid(history, job.taintedRevids);
     const result = await cleanTaintedHistory(history, job.taintedRevids, {
+      keepBots: host.session.cleanup.keepBots,
       onRestoredSection: async (section) =>
         refreshDeprecatedParameters(
           section.text,
@@ -388,10 +386,8 @@ async function processJob(host: CleanupHost, job: PageJob): Promise<void> {
     await host.persist();
     host.refresh();
   } catch (error) {
-    if (taggedForProd(job)) {
-      job.status = "prod";
-      await host.persist();
-      host.refresh();
+    if (sparedFromScrub(job)) {
+      await park(host, job);
       return;
     }
     if (!host.running) {
@@ -409,25 +405,44 @@ async function processJob(host: CleanupHost, job: PageJob): Promise<void> {
   }
 }
 
-function taggedForProd(job: PageJob): boolean {
+function sparedFromScrub(job: PageJob): boolean {
   return (
     job.status === "prod" ||
-    job.explanations.some((item) => item.action === "llm-prod")
+    job.status === "aitag" ||
+    job.explanations.some(
+      (item) => item.action === "llm-prod" || item.action === "ai-tag",
+    )
   );
 }
 
+function holdStatus(job: PageJob): "prod" | "aitag" {
+  if (
+    job.status === "prod" ||
+    job.explanations.some((item) => item.action === "llm-prod")
+  ) {
+    return "prod";
+  }
+  return "aitag";
+}
+
+async function park(host: CleanupHost, job: PageJob): Promise<void> {
+  job.status = holdStatus(job);
+  await host.persist();
+  host.refresh();
+}
+
 const PROD_CATEGORY = "Category:AI-generated content proposed for deletion";
+const AI_CATEGORY = "Category:Articles containing suspected AI-generated texts";
 
 async function maybeProd(host: CleanupHost, job: PageJob): Promise<boolean> {
   const cleanup = host.session.cleanup;
-  if (
-    !cleanup.llmprod ||
-    cleanup.reason !== "AI" ||
-    !job.isNew ||
-    cleanup.llmprodPercent == null
-  ) {
-    return false;
-  }
+  const prodOn =
+    cleanup.llmprod &&
+    cleanup.reason === "AI" &&
+    cleanup.llmprodPercent != null;
+  const tagOn =
+    cleanup.aiTag && cleanup.reason === "AI" && cleanup.aiTagPercent != null;
+  if ((!prodOn && !tagOn) || !job.isNew) return false;
   if (!host.running) return yieldJob(host, job);
   const pageid = job.pageid ?? (await pageIdOf(job.title));
   if (await yieldJob(host, job)) return true;
@@ -448,10 +463,22 @@ async function maybeProd(host: CleanupHost, job: PageJob): Promise<boolean> {
     return false;
   }
   if (await yieldJob(host, job)) return true;
-  if (!(percent > cleanup.llmprodPercent)) return false;
+  const prod = prodOn && percent > (cleanup.llmprodPercent ?? 0);
+  const tag = !prod && tagOn && percent > (cleanup.aiTagPercent ?? 0);
+  if (!prod && !tag) return false;
   const latest = await latestRevision(job.title);
   if (await yieldJob(host, job)) return true;
-  let banner = prodTemplate(cleanup.summary);
+  if (tag && (await hasCategory(job.title, AI_CATEGORY))) {
+    job.status = "skipped";
+    job.explanations = [note("Already tagged as AI-generated")];
+    await host.persist();
+    host.refresh();
+    await updateTracking(host, job.title, requireReason(host), "tagged");
+    return true;
+  }
+  let banner = prod
+    ? prodTemplate(cleanup.summary)
+    : aiTagTemplate(cleanup.summary);
   try {
     const expanded = await expandWikitext(job.title, banner);
     if (expanded.trim()) banner = expanded;
@@ -465,7 +492,7 @@ async function maybeProd(host: CleanupHost, job: PageJob): Promise<boolean> {
   job.content = `${banner.trim()}\n${latest.content}`;
   job.explanations = [
     {
-      action: "llm-prod",
+      action: prod ? "llm-prod" : "ai-tag",
       start: [0, 0],
       end: [0, 0],
       details: [`authorship ${percent.toFixed(1)}%`],
@@ -474,7 +501,7 @@ async function maybeProd(host: CleanupHost, job: PageJob): Promise<boolean> {
   scheduleReview(job.title, latest.content, latest.revid, job.content);
   const automatic = cleanup.llmprodAuto && !cleanup.revdel;
   if (!automatic) {
-    job.status = "prod";
+    job.status = prod ? "prod" : "aitag";
     await host.persist();
     host.refresh();
     return true;
@@ -506,8 +533,11 @@ async function commitEdit(
 ): Promise<void> {
   if (host.session.jobs[job.title] !== job) return;
   let text = content;
-  if (job.explanations.some((item) => item.action === "llm-prod")) {
-    if (await hasCategory(job.title, PROD_CATEGORY)) {
+  const prod = job.explanations.some((item) => item.action === "llm-prod");
+  const ai = job.explanations.some((item) => item.action === "ai-tag");
+  const reason = requireReason(host);
+  if (prod || ai) {
+    if (prod && (await hasCategory(job.title, PROD_CATEGORY))) {
       job.status = "skipped";
       job.explanations = [
         ...job.explanations,
@@ -515,11 +545,22 @@ async function commitEdit(
       ];
       await host.persist();
       host.refresh();
+      await updateTracking(host, job.title, reason, "completed");
+      return;
+    }
+    if (ai && !prod && (await hasCategory(job.title, AI_CATEGORY))) {
+      job.status = "skipped";
+      job.explanations = [
+        ...job.explanations,
+        note("Already tagged as AI-generated"),
+      ];
+      await host.persist();
+      host.refresh();
+      await updateTracking(host, job.title, reason, "tagged");
       return;
     }
     text = await expandProdBanner(job.title, text);
   }
-  const reason = requireReason(host);
   const summary = editSummary(reason, host.session.cleanup.summary);
   const base = job.baseRevid;
   if (base == null) throw new Error("Missing base revision");
@@ -542,26 +583,32 @@ async function commitEdit(
       host.refresh();
     }
   }
-  await updateTracking(host, job.title, reason);
+  await updateTracking(
+    host,
+    job.title,
+    reason,
+    ai && !prod ? "tagged" : "completed",
+  );
 }
 
 async function updateTracking(
   host: CleanupHost,
   title: string,
   reason: CleanupReason,
+  status: "completed" | "tagged" = "completed",
 ): Promise<void> {
   const page = host.session.cleanup.trackingPage.trim();
   if (!page) return;
   const run = async () => {
     for (let attempt = 0; attempt < 2; attempt++) {
       const current = await readPage(page);
-      const next = markArticleCompleted(current.text, title);
+      const next = markArticleCompleted(current.text, title, status);
       if (next == null) return;
       try {
         await savePage(
           page,
           next,
-          editSummary(reason, `marked [[${title}]] completed`),
+          editSummary(reason, `marked [[${title}]] ${status}`),
           current.revid,
         );
         return;
@@ -579,7 +626,7 @@ function yieldJob(host: CleanupHost, job: PageJob): Promise<boolean> {
     return Promise.resolve(false);
   }
   if (host.session.jobs[job.title] !== job) return Promise.resolve(true);
-  job.status = taggedForProd(job) ? "prod" : "pending";
+  job.status = sparedFromScrub(job) ? holdStatus(job) : "pending";
   return host.persist().then(() => {
     host.refresh();
     return true;

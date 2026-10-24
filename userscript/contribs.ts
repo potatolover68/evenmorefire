@@ -12,6 +12,7 @@ const LINKED = new Set([
   "flagged",
   "review",
   "prod",
+  "aitag",
   "applied",
   "skipped",
   "undone",
@@ -23,6 +24,7 @@ const STATUS_LABEL: Record<string, string> = {
   flagged: "awaiting review (flagged)",
   review: "awaiting review",
   prod: "LLMPROD",
+  aitag: "AI tag",
   applied: "applied",
   skipped: "skipped",
   undone: "undone",
@@ -190,11 +192,17 @@ function paintStatus(
   const prod = found.job.explanations.some(
     (item) => item.action === "llm-prod",
   );
+  const ai =
+    !prod &&
+    found.job.explanations.some((item) => item.action === "ai-tag");
   const label = prod
     ? "LLMPROD"
-    : (STATUS_LABEL[found.job.status] ?? found.job.status);
+    : ai
+      ? "AI tag"
+      : (STATUS_LABEL[found.job.status] ?? found.job.status);
   const span = document.createElement("span");
-  span.className = `emf-status emf-status-${found.job.status}${prod ? " emf-status-prod" : ""}`;
+  const mark = prod ? " emf-status-prod" : ai ? " emf-status-aitag" : "";
+  span.className = `emf-status emf-status-${found.job.status}${mark}`;
   if (LINKED.has(found.job.status)) {
     const anchor = document.createElement("a");
     anchor.href = "#";

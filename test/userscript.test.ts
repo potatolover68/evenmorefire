@@ -14,7 +14,7 @@ import { defaultFilters } from "../userscript/filters.ts";
 import type { FilterConfig, PageJob } from "../userscript/types.ts";
 import { countEdits } from "../userscript/types.ts";
 import { markArticleCompleted } from "../userscript/aic.ts";
-import { editSummary, prodTemplate } from "../userscript/summary.ts";
+import { aiTagTemplate, editSummary, prodTemplate } from "../userscript/summary.ts";
 import { tokenEditors } from "../userscript/wikiwho.ts";
 
 function contrib(patch: Partial<Contrib> = {}): Contrib {
@@ -148,6 +148,9 @@ describe("edit summaries", () => {
     expect(prodTemplate("See [[Wikipedia:AI noticeboard/Kiilvish]]")).toBe(
       "{{subst:Prod llm|reason=[[WP:LLMPRV{{!}}presumptive removal of AI-generated content]]. See [[Wikipedia:AI noticeboard/Kiilvish]]}}",
     );
+    expect(aiTagTemplate("See [[Wikipedia:AI noticeboard/Kiilvish]]")).toBe(
+      "{{subst:AI-generated|reason=This article appears to be AI-generated. See [[Wikipedia:AI noticeboard/Kiilvish]]}}",
+    );
   });
 });
 
@@ -162,6 +165,18 @@ describe("AIC rows", () => {
     );
     expect(markArticleCompleted(source, "Example")).toContain("to do");
     expect(markArticleCompleted(source, "Missing")).toBeNull();
+  });
+
+  it("marks an AI tag as tagged and does not reopen a completed row", () => {
+    const source = `{{AIC article row|article=Example|status=requested}}
+{{AIC article row|article=Done|status=completed}}`;
+    expect(markArticleCompleted(source, "Example", "tagged")).toContain(
+      "status=tagged",
+    );
+    expect(markArticleCompleted(source, "Done", "tagged")).toBeNull();
+    expect(markArticleCompleted(source, "Example", "completed")).toContain(
+      "status=completed",
+    );
   });
 });
 
@@ -309,6 +324,7 @@ describe("queue counts", () => {
       flagged: 1,
       review: 3,
       prod: 1,
+      aitag: 0,
       total: 9,
     });
   });

@@ -1,8 +1,11 @@
 import { findTemplates } from "../deprecated/wikitext.ts";
 
+export type RowStatus = "completed" | "tagged";
+
 export function markArticleCompleted(
   wikitext: string,
   title: string,
+  status: RowStatus = "completed",
 ): string | null {
   const wanted = plainTitle(title);
   const spans = findTemplates(wikitext).filter(
@@ -12,7 +15,7 @@ export function markArticleCompleted(
   let changed = false;
   for (const span of [...spans].reverse()) {
     const body = out.slice(span.start, span.end);
-    const next = rewriteRow(body, wanted);
+    const next = rewriteRow(body, wanted, status);
     if (next == null || next === body) continue;
     out = out.slice(0, span.start) + next + out.slice(span.end);
     changed = true;
@@ -20,7 +23,11 @@ export function markArticleCompleted(
   return changed ? out : null;
 }
 
-function rewriteRow(body: string, wanted: string): string | null {
+function rewriteRow(
+  body: string,
+  wanted: string,
+  status: RowStatus,
+): string | null {
   if (!body.startsWith("{{") || !body.endsWith("}}")) return null;
   const inner = body.slice(2, -2);
   const parts = splitTop(inner);
@@ -36,41 +43,45 @@ function rewriteRow(body: string, wanted: string): string | null {
     (param) => param.key === "status" || param.key === "2",
   );
   if (named >= 0) {
-    if (isCompleted(parsed[named]!.value)) return body;
+    if (statusRank(parsed[named]!.value) >= statusRank(status)) return body;
     const nextParams = params.slice();
-    nextParams[named] = replaceNamed(params[named] ?? "");
+    nextParams[named] = replaceNamed(params[named] ?? "", status);
     return wrap(name, nextParams);
   }
   const positional = parsed
     .map((param, index) => ({ param, index }))
     .filter((entry) => entry.param.key == null);
-  const status = positional[1];
-  if (status) {
-    if (isCompleted(status.param.value)) return body;
+  const slot = positional[1];
+  if (slot) {
+    if (statusRank(slot.param.value) >= statusRank(status)) return body;
     const nextParams = params.slice();
-    nextParams[status.index] = replacePositional(params[status.index] ?? "");
+    nextParams[slot.index] = replacePositional(params[slot.index] ?? "", status);
     return wrap(name, nextParams);
   }
-  return `${body.slice(0, -2)}|status=completed}}`;
+  return `${body.slice(0, -2)}|status=${status}}}`;
 }
 
 function wrap(name: string, params: readonly string[]): string {
   return `{{${[name, ...params].join("|")}}}`;
 }
 
-function replaceNamed(raw: string): string {
+function replaceNamed(raw: string, status: RowStatus): string {
   const eq = raw.indexOf("=");
   if (eq < 0) return raw;
-  return `${raw.slice(0, eq + 1)}completed`;
+  return `${raw.slice(0, eq + 1)}${status}`;
 }
 
-function replacePositional(raw: string): string {
+function replacePositional(raw: string, status: RowStatus): string {
   const match = /^(\s*)[\s\S]*?(\s*)$/.exec(raw);
-  return `${match?.[1] ?? ""}completed${match?.[2] ?? ""}`;
+  return `${match?.[1] ?? ""}${status}${match?.[2] ?? ""}`;
 }
 
-function isCompleted(value: string): boolean {
-  return /^(completed|c)$/i.test(value.trim());
+/** Completed outranks tagged, which outranks an open cleanup row. */
+function statusRank(value: string): number {
+  const text = value.trim().toLowerCase();
+  if (text === "completed" || text === "c") return 2;
+  if (text === "tagged" || text === "tag" || text === "tg") return 1;
+  return 0;
 }
 
 function parseParam(raw: string): { key: string | null; value: string } {

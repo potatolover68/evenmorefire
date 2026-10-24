@@ -47,8 +47,10 @@ export interface TrivialRollback {
 /**
  * When every tainted revision is in a trailing run, the scrub is the text
  * before that run. A tainted exact revert ends the run and is kept, so a
- * rollback does not restore the vandalism it undid. Bot and maintenance
- * edits are skipped, so reFill, IABot, or a subst bot does not end the run.
+ * rollback does not restore the vandalism it undid. A bot edit inside the
+ * run is skipped, so reFill or IABot does not hide an older tainted edit.
+ * A bot edit underneath the run is kept. `keepBots` refuses a wholesale
+ * rollback that would discard any bot edit, and the token scrub keeps it.
  * Returns null when an older tainted edit still needs the full scrub, or a
  * hidden revision sits in the run.
  */
@@ -56,13 +58,27 @@ export function trivialRollback(
   revisions: readonly Revision[],
   tainted: ReadonlySet<number>,
   reverts: ReadonlySet<number>,
+  keepBots = false,
 ): TrivialRollback | null {
   const undone: number[] = [];
   let kept: Revision | null = null;
   for (let i = revisions.length - 1; i >= 0; i--) {
     const revision = revisions[i]!;
     if (revision.content == null) return null;
-    if (isMaintenance(revision)) continue;
+    if (isMaintenance(revision)) {
+      if (keepBots) return null;
+      if (undone.length === 0) continue;
+      const older = olderSolid(revisions, i);
+      if (older === "hidden") return null;
+      const olderRev = older < 0 ? null : revisions[older];
+      const continues =
+        olderRev != null &&
+        tainted.has(olderRev.revid) &&
+        !reverts.has(olderRev.revid);
+      if (continues) continue;
+      kept = revision;
+      break;
+    }
     if (!tainted.has(revision.revid) || reverts.has(revision.revid)) {
       kept = revision;
       break;
@@ -83,6 +99,19 @@ export function trivialRollback(
     keptRevert: kept && tainted.has(kept.revid) ? kept.revid : null,
     emptied: kept == null,
   };
+}
+
+/** Index of the nearest older non-bot revision, or -1. `"hidden"` when a deleted revision blocks the walk. */
+function olderSolid(
+  revisions: readonly Revision[],
+  from: number,
+): number | "hidden" {
+  for (let j = from - 1; j >= 0; j--) {
+    const revision = revisions[j]!;
+    if (revision.content == null) return "hidden";
+    if (!isMaintenance(revision)) return j;
+  }
+  return -1;
 }
 
 /** Origin-tainted tokens stay out. Tainted events are ignored unless that revision is an exact revert. */

@@ -137,8 +137,12 @@ function queueSummary(controller: DialogController): string {
   const here = jobs.filter((job) => visible.has(job.title));
   const line = (label: string, group: typeof jobs) => {
     const counts = countEdits(group);
-    const prod = counts.prod ? `, ${counts.prod} LLMPROD` : "";
-    return `${label}: ${counts.applied} applied, ${counts.skipped} skipped, ${counts.flagged} flagged${prod}, ${counts.review} awaiting review, ${counts.total} total`;
+    const marks = [
+      counts.prod ? `${counts.prod} LLMPROD` : "",
+      counts.aitag ? `${counts.aitag} AI tag` : "",
+    ].filter((part) => part !== "");
+    const extra = marks.length > 0 ? `, ${marks.join(", ")}` : "";
+    return `${label}: ${counts.applied} applied, ${counts.skipped} skipped, ${counts.flagged} flagged${extra}, ${counts.review} awaiting review, ${counts.total} total`;
   };
   const finished = !controller.running && !hasPending(controller.session);
   const running = controller.running
@@ -343,6 +347,17 @@ function appendCleanup(
   });
   form.append({
     type: "checkbox",
+    list: [
+      {
+        name: "keepBots",
+        value: "yes",
+        label: "Do not undo bot edits",
+        checked: cleanup.keepBots,
+      },
+    ],
+  });
+  form.append({
+    type: "checkbox",
     adminonly: true,
     list: [
       {
@@ -420,11 +435,35 @@ function appendCleanup(
       {
         name: "llmprodAuto",
         value: "yes",
-        label: "Automatically apply LLMPRODs",
-        checked: cleanup.llmprodAuto && cleanup.llmprod && !lockProd,
-        disabled: lockProd || !cleanup.llmprod,
+        label: "Automatically apply LLMPRODs and AI tags",
+        checked:
+          cleanup.llmprodAuto &&
+          (cleanup.llmprod || cleanup.aiTag) &&
+          !lockProd,
+        disabled: lockProd || (!cleanup.llmprod && !cleanup.aiTag),
       },
     ],
+  });
+  form.append({
+    type: "checkbox",
+    list: [
+      {
+        name: "aiTag",
+        value: "yes",
+        label: "AI tag article creations with more than",
+        checked: cleanup.aiTag && !lockProd,
+        disabled: lockProd,
+      },
+    ],
+  });
+  form.append({
+    type: "number",
+    name: "aiTagPercent",
+    label: "% authorship",
+    value: cleanup.aiTagPercent ?? "",
+    min: 0,
+    max: 100,
+    disabled: lockProd || !cleanup.aiTag,
   });
   form.append({ type: "submit", name: "next", label: "Next step" });
   form.append({ type: "submit", name: "save", label: "Save" });
@@ -549,21 +588,31 @@ function readCleanup(form: HTMLFormElement): {
       : "";
   const percent = numberOrNull(text(form, "llmprodPercent"));
   if (percent === undefined) return fail("Authorship percent must be a number");
+  const aiPercent = numberOrNull(text(form, "aiTagPercent"));
+  if (aiPercent === undefined)
+    return fail("AI tag authorship percent must be a number");
   const llmprod = box(form, "llmprod");
+  const aiTag = box(form, "aiTag");
   if (llmprod && (percent == null || percent < 0 || percent > 100)) {
     return fail("Enter an authorship percent from 0 to 100");
+  }
+  if (aiTag && (aiPercent == null || aiPercent < 0 || aiPercent > 100)) {
+    return fail("Enter an AI tag authorship percent from 0 to 100");
   }
   return {
     error: null,
     config: {
       auto: box(form, "auto"),
       revdel: box(form, "revdel"),
+      keepBots: box(form, "keepBots"),
       trackingPage: text(form, "tracking"),
       summary: text(form, "summary"),
       reason,
       llmprod,
       llmprodPercent: percent,
-      llmprodAuto: llmprod && box(form, "llmprodAuto"),
+      llmprodAuto: (llmprod || aiTag) && box(form, "llmprodAuto"),
+      aiTag,
+      aiTagPercent: aiPercent,
     },
   };
 }
@@ -587,13 +636,20 @@ function enforceLocks(form: HTMLFormElement): void {
   const lockProd = reason !== "AI";
   lock(form, "auto", lockAuto);
   lock(form, "llmprod", lockProd);
+  lock(form, "aiTag", lockProd);
   const prod = form.querySelector<HTMLInputElement>('input[name="llmprod"]');
+  const ai = form.querySelector<HTMLInputElement>('input[name="aiTag"]');
   const prodOn = !lockProd && !!prod?.checked && !prod.disabled;
-  lock(form, "llmprodAuto", !prodOn);
+  const aiOn = !lockProd && !!ai?.checked && !ai.disabled;
+  lock(form, "llmprodAuto", !(prodOn || aiOn));
   const percent = form.querySelector<HTMLInputElement>(
     'input[name="llmprodPercent"]',
   );
   if (percent) percent.disabled = !prodOn;
+  const aiPercent = form.querySelector<HTMLInputElement>(
+    'input[name="aiTagPercent"]',
+  );
+  if (aiPercent) aiPercent.disabled = !aiOn;
 }
 
 function lock(form: HTMLFormElement, name: string, locked: boolean): void {

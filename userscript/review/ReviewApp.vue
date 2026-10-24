@@ -41,7 +41,7 @@ let lock = false;
 let observer: ResizeObserver | null = null;
 
 const reviewable = computed(() =>
-  ["processed", "flagged", "review", "prod"].includes(props.state.status),
+  ["processed", "flagged", "review", "prod", "aitag"].includes(props.state.status),
 );
 const rows = computed(() => props.state.rows ?? []);
 const chars = computed(() => charsAcross(paneWidth.value, charPx.value));

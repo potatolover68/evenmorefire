@@ -72,6 +72,11 @@ export interface Options {
   taintedRefPolicy?: "keep" | "drop";
   restoreAnchorWindow?: number;
   /**
+   * Do not roll a bot or maintenance edit back to an older revision.
+   * The token scrub keeps that edit's text instead.
+   */
+  keepBots?: boolean;
+  /**
    * When set, `cleanTaintedHistory` returns a promise and runs this on each
    * restored section after orphan rescue.
    */
