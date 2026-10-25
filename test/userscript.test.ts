@@ -178,6 +178,26 @@ describe("AIC rows", () => {
       "status=completed",
     );
   });
+
+  it("records a prod as ongoing and will not walk a row backwards", () => {
+    const source = `{{AIC article row|article=Open|status=requested}}
+{{AIC article row|article=Done|status=c}}
+{{AIC article row|article=Tagged|status=tagged}}
+{{AIC article row|article=Skip|status=unneeded}}
+{{AIC article row|Prod|o|note}}`;
+    expect(markArticleCompleted(source, "Open", "ongoing")).toContain(
+      "status=ongoing",
+    );
+    expect(markArticleCompleted(source, "Done", "ongoing")).toBeNull();
+    expect(markArticleCompleted(source, "Tagged", "ongoing")).toContain(
+      "status=ongoing",
+    );
+    expect(markArticleCompleted(source, "Skip", "ongoing")).toBeNull();
+    expect(markArticleCompleted(source, "Prod", "tagged")).toBeNull();
+    expect(markArticleCompleted(source, "Prod", "completed")).toContain(
+      "|completed|",
+    );
+  });
 });
 
 describe("comment labels", () => {

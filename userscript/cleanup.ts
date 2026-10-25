@@ -1,7 +1,7 @@
 import { refreshDeprecatedParameters } from "../deprecated/refresh.ts";
 import { cleanTaintedHistory, type Revision } from "../scrubber/index.ts";
 import type { Explanation } from "../scrubber/types.ts";
-import { markArticleCompleted } from "./aic.ts";
+import { markArticleCompleted, type RowStatus } from "./aic.ts";
 import { nextContributionsHref, titlesOnPage } from "./contribs.ts";
 import {
   EditConflict,
@@ -304,7 +304,7 @@ async function processJob(host: CleanupHost, job: PageJob): Promise<void> {
       ];
       await host.persist();
       host.refresh();
-      await updateTracking(host, job.title, requireReason(host), "completed");
+      await updateTracking(host, job.title, requireReason(host), "ongoing");
       return;
     }
     if (await maybeProd(host, job)) return;
@@ -545,7 +545,7 @@ async function commitEdit(
       ];
       await host.persist();
       host.refresh();
-      await updateTracking(host, job.title, reason, "completed");
+      await updateTracking(host, job.title, reason, "ongoing");
       return;
     }
     if (ai && !prod && (await hasCategory(job.title, AI_CATEGORY))) {
@@ -583,19 +583,15 @@ async function commitEdit(
       host.refresh();
     }
   }
-  await updateTracking(
-    host,
-    job.title,
-    reason,
-    ai && !prod ? "tagged" : "completed",
-  );
+  const tracked: RowStatus = prod ? "ongoing" : ai ? "tagged" : "completed";
+  await updateTracking(host, job.title, reason, tracked);
 }
 
 async function updateTracking(
   host: CleanupHost,
   title: string,
   reason: CleanupReason,
-  status: "completed" | "tagged" = "completed",
+  status: RowStatus = "completed",
 ): Promise<void> {
   const page = host.session.cleanup.trackingPage.trim();
   if (!page) return;

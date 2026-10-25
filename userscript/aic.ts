@@ -1,6 +1,6 @@
 import { findTemplates } from "../deprecated/wikitext.ts";
 
-export type RowStatus = "completed" | "tagged";
+export type RowStatus = "completed" | "ongoing" | "unnecessary" | "tagged";
 
 export function markArticleCompleted(
   wikitext: string,
@@ -76,10 +76,15 @@ function replacePositional(raw: string, status: RowStatus): string {
   return `${match?.[1] ?? ""}${status}${match?.[2] ?? ""}`;
 }
 
-/** Completed outranks tagged, which outranks an open cleanup row. */
+/**
+ * A finished cleanup outranks an unneeded one, which outranks a prod
+ * (`ongoing`), which outranks an AI tag. Open rows stay at the bottom.
+ */
 function statusRank(value: string): number {
-  const text = value.trim().toLowerCase();
-  if (text === "completed" || text === "c") return 2;
+  const text = value.trim().toLowerCase().replace(/\s+/g, " ");
+  if (text === "completed" || text === "c") return 4;
+  if (text === "unnecessary" || text === "u" || text === "unneeded") return 3;
+  if (text === "ongoing" || text === "o" || text === "in progress") return 2;
   if (text === "tagged" || text === "tag" || text === "tg") return 1;
   return 0;
 }
