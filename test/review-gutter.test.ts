@@ -82,4 +82,20 @@ describe("wrapped rows", () => {
       ),
     ).toEqual([36]);
   });
+
+  it("budgets two columns for a non-Latin glyph", () => {
+    const wide = "আ".repeat(4);
+    expect(
+      rowHeights(
+        [{ before: wide, after: "abcd", beforeLine: 0, afterLine: 0 }],
+        4,
+      ),
+    ).toEqual([36]);
+    expect(
+      rowHeights(
+        [{ before: "abcd", after: null, beforeLine: 0, afterLine: null }],
+        4,
+      ),
+    ).toEqual([18]);
+  });
 });

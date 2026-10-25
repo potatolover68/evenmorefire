@@ -10,7 +10,17 @@ export function charsAcross(widthPx: number, charPx: number): number {
 export function wrapCount(text: string | null, charsPerLine: number): number {
   if (text == null || text.length === 0) return 1;
   const width = Math.max(1, charsPerLine);
-  return Math.max(1, Math.ceil(text.length / width));
+  return Math.max(1, Math.ceil(displayColumns(text) / width));
+}
+
+function displayColumns(text: string): number {
+  let columns = 0;
+  for (let i = 0; i < text.length; ) {
+    const cp = text.codePointAt(i)!;
+    columns += cp <= 0xff ? 1 : 2;
+    i += cp > 0xffff ? 2 : 1;
+  }
+  return columns;
 }
 
 export function rowHeights(
