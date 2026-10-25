@@ -339,18 +339,33 @@ export async function hasCategory(
   title: string,
   category: string,
 ): Promise<boolean> {
-  const data = await wikiApi().get({
-    action: "query",
-    prop: "categories",
-    titles: title,
-    clcategories: category,
-    cllimit: "1",
-    format: "json",
-    formatversion: "2",
-  });
-  assertOk(data);
-  const categories = pageList(data)[0]?.categories;
-  return Array.isArray(categories) && categories.length > 0;
+  let clcontinue: string | undefined;
+  do {
+    const data = await wikiApi().get(
+      cleanParams({
+        action: "query",
+        prop: "categories",
+        titles: title,
+        cllimit: "max",
+        clcontinue,
+        format: "json",
+        formatversion: "2",
+      }),
+    );
+    assertOk(data);
+    const categories = pageList(data)[0]?.categories;
+    if (
+      Array.isArray(categories) &&
+      categories.some(
+        (row) =>
+          typeof row?.title === "string" && row.title.startsWith(category),
+      )
+    ) {
+      return true;
+    }
+    clcontinue = data.continue?.clcontinue as string | undefined;
+  } while (clcontinue);
+  return false;
 }
 
 export async function savePage(
