@@ -21,27 +21,55 @@ export function isMaintenance(revision: Revision): boolean {
   );
 }
 
-export function revertRevids(revisions: readonly Revision[]): Set<number> {
-  const seen: string[] = [];
+/** Hidden when neither the text nor a content hash is available. */
+export function isRevisionHidden(revision: Revision): boolean {
+  return revision.content == null && !revision.sha1;
+}
+
+export interface RevertTracker {
+  push(revision: Revision): void;
+  revids(): Set<number>;
+}
+
+/** Exact-match reverts, remembering only the last {@link REVERT_LOOKBACK} identities. */
+export function createRevertTracker(): RevertTracker {
+  const ring: string[] = [];
   const out = new Set<number>();
-  for (const rev of revisions) {
-    if (rev.content == null) continue;
-    const text = normalizeNewlines(rev.content);
-    const window = seen.slice(-REVERT_LOOKBACK);
-    if (window.includes(text)) out.add(rev.revid);
-    seen.push(text);
-  }
-  return out;
+  return {
+    push(revision) {
+      const identity = revisionIdentity(revision);
+      if (identity == null) return;
+      if (ring.includes(identity)) out.add(revision.revid);
+      ring.push(identity);
+      if (ring.length > REVERT_LOOKBACK) ring.shift();
+    },
+    revids: () => out,
+  };
+}
+
+export function revertRevids(revisions: readonly Revision[]): Set<number> {
+  const tracker = createRevertTracker();
+  for (const revision of revisions) tracker.push(revision);
+  return tracker.revids();
+}
+
+function revisionIdentity(revision: Revision): string | null {
+  if (revision.content != null) return normalizeNewlines(revision.content);
+  if (revision.sha1) return `\0sha1:${revision.sha1}`;
+  return null;
 }
 
 export interface TrivialRollback {
-  content: string;
+  /** Kept revision text, or null when that text has not been loaded. */
+  content: string | null;
   /** Tainted revisions dropped, oldest first. */
   undone: number[];
   /** Tainted exact revert the rollback stopped on, when that revert is kept. */
   keptRevert: number | null;
   /** True when the tainted run goes back through the first revision. */
   emptied: boolean;
+  /** Revision whose text is the scrub. Null when the page is emptied. */
+  keptRevid: number | null;
 }
 
 /**
@@ -64,7 +92,7 @@ export function trivialRollback(
   let kept: Revision | null = null;
   for (let i = revisions.length - 1; i >= 0; i--) {
     const revision = revisions[i]!;
-    if (revision.content == null) return null;
+    if (isRevisionHidden(revision)) return null;
     if (isMaintenance(revision)) {
       if (keepBots) return null;
       if (undone.length === 0) continue;
@@ -89,12 +117,13 @@ export function trivialRollback(
   const accounted = new Set(undone);
   if (kept && tainted.has(kept.revid)) accounted.add(kept.revid);
   for (const revision of revisions) {
-    if (revision.content == null || !tainted.has(revision.revid)) continue;
+    if (isRevisionHidden(revision) || !tainted.has(revision.revid)) continue;
     if (!accounted.has(revision.revid)) return null;
   }
   undone.reverse();
   return {
-    content: kept?.content ?? "",
+    content: kept?.content ?? null,
+    keptRevid: kept?.revid ?? null,
     undone,
     keptRevert: kept && tainted.has(kept.revid) ? kept.revid : null,
     emptied: kept == null,
@@ -108,7 +137,7 @@ function olderSolid(
 ): number | "hidden" {
   for (let j = from - 1; j >= 0; j--) {
     const revision = revisions[j]!;
-    if (revision.content == null) return "hidden";
+    if (isRevisionHidden(revision)) return "hidden";
     if (!isMaintenance(revision)) return j;
   }
   return -1;

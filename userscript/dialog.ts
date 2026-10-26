@@ -36,6 +36,8 @@ export interface DialogController {
   finish(): Promise<void>;
   /** Drop contribution highlights while the dialog is closed. */
   conceal(): void;
+  /** Current page scrub, shown on step 3. */
+  progress: string;
 }
 
 let active: DialogController | null = null;
@@ -150,7 +152,9 @@ function queueSummary(controller: DialogController): string {
     : finished
       ? "Processing is finished."
       : "Processing is paused.";
-  return `${line("This contributions page", here)}\n${line("All contributions", jobs)}\n${running}`;
+  const progress = controller.progress.trim();
+  const detail = progress ? `\n${progress}` : "";
+  return `${line("This contributions page", here)}\n${line("All contributions", jobs)}\n${running}${detail}`;
 }
 
 function render(controller: DialogController): void {

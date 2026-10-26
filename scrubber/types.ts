@@ -42,6 +42,13 @@ export interface Revision {
   bot?: boolean;
   /** Change tags, such as `OAuth CID: 678`. */
   tags?: string[];
+  /**
+   * MediaWiki content hash. Set when the text itself was not downloaded.
+   * A present hash means the revision is visible.
+   */
+  sha1?: string;
+  /** MediaWiki byte size, when the text itself was not downloaded. */
+  size?: number;
 }
 
 /** 1-based line positions, matching deprecated-parameter comments. */

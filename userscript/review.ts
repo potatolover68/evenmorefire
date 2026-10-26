@@ -1,4 +1,4 @@
-import { createApp, reactive, type App } from "vue";
+import { createApp, markRaw, reactive, type App } from "vue";
 import { alignSides, type AlignedRow } from "./align.ts";
 import ReviewApp from "./review/ReviewApp.vue";
 import reviewCss from "./review/review.css?inline";
@@ -49,6 +49,11 @@ let current: {
   state: ReviewState;
   actions: ReviewActions;
 } | null = null;
+
+export function openReviewTitle(): string | null {
+  if (!current || current.popup.closed) return null;
+  return current.state.title || null;
+}
 
 export function openReview(request: ReviewRequest): ReviewHandle {
   const gen = ++generation;
@@ -127,7 +132,6 @@ function fillState(state: ReviewState, request: ReviewRequest): void {
   state.explanations = [];
   state.warnings = [];
   state.title = request.title;
-  state.latestText = request.latestText;
   state.latestRevid = request.latestRevid;
   state.baseRevid = request.baseRevid;
   state.proposal = request.proposal;
@@ -135,7 +139,8 @@ function fillState(state: ReviewState, request: ReviewRequest): void {
   state.taintedRevids = request.taintedRevids;
   state.status = request.status;
   state.origin = request.origin;
-  state.rows = request.rows ?? null;
+  state.rows = request.rows ? markRaw(request.rows) : null;
+  state.latestText = state.rows ? "" : request.latestText;
   state.statusText = "";
   state.editing = false;
   state.done = false;
@@ -165,13 +170,13 @@ function handleFor(
   gen: number,
 ): ReviewHandle {
   return {
-    show(text, revid, rows) {
+    show(text, revid, prepared) {
       if (gen !== generation || popup.closed) return;
-      state.latestText = text;
       state.latestRevid = revid;
       state.failed = "";
       state.rows = null;
-      state.rows = rows ?? alignSides(text, state.proposal);
+      state.rows = markRaw(prepared ?? alignSides(text, state.proposal));
+      state.latestText = "";
       if (request.baseRevid != null && request.baseRevid !== revid) {
         pushWarning(
           state,

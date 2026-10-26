@@ -7,7 +7,7 @@ export interface PreparedReview {
   rows: AlignedRow[];
 }
 
-const MAX = 12;
+const MAX = 1;
 const ready = new Map<string, PreparedReview>();
 const order: string[] = [];
 const inflight = new Map<string, Promise<PreparedReview>>();

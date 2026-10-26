@@ -81,18 +81,63 @@ export async function fetchHistory(
   oldestRevid: number,
   behind = 50,
 ): Promise<Revision[]> {
+  return collectHistory(title, oldestRevid, behind, true);
+}
+
+/** Revision metadata, including sha1, without wikitext. */
+export async function listHistoryMeta(
+  title: string,
+  oldestRevid: number,
+  behind = 50,
+): Promise<Revision[]> {
+  return collectHistory(title, oldestRevid, behind, false);
+}
+
+/**
+ * Download wikitext for `metas` in chronological batches.
+ * The batch is only live for the callback; callers should drop `content` before returning.
+ */
+export async function streamHistoryContent(
+  metas: readonly Revision[],
+  onBatch: (batch: Revision[]) => Promise<boolean | void> | boolean | void,
+): Promise<void> {
+  const size = 50;
+  for (let i = 0; i < metas.length; i += size) {
+    const batch = metas.slice(i, i + size).map((meta) => ({ ...meta }));
+    const contents = await fetchRevisionContents(batch.map((meta) => meta.revid));
+    for (const meta of batch) meta.content = contents.get(meta.revid) ?? null;
+    const keepGoing = await onBatch(batch);
+    if (keepGoing === false) return;
+  }
+}
+
+export async function fetchRevisionText(revid: number): Promise<string> {
+  const contents = await fetchRevisionContents([revid]);
+  const text = contents.get(revid);
+  if (text == null) throw new WikiError(`Could not read revision ${revid}`);
+  return text;
+}
+
+async function collectHistory(
+  title: string,
+  oldestRevid: number,
+  behind: number,
+  withContent: boolean,
+): Promise<Revision[]> {
   const byId = new Map<number, Revision>();
   await collectRevisions(
     title,
     { rvdir: "older", rvstartid: String(oldestRevid) },
     behind + 1,
     byId,
+    withContent,
   );
   await collectRevisions(
     title,
     { rvdir: "newer", rvstartid: String(oldestRevid) },
     Number.POSITIVE_INFINITY,
     byId,
+    withContent,
   );
   return [...byId.values()].sort(
     (a, b) =>
@@ -105,6 +150,7 @@ async function collectRevisions(
   direction: { rvdir: string; rvstartid: string },
   limit: number,
   into: Map<number, Revision>,
+  withContent: boolean,
 ): Promise<void> {
   let rvcontinue: string | undefined;
   while (into.size < limit) {
@@ -113,8 +159,10 @@ async function collectRevisions(
         action: "query",
         prop: "revisions",
         titles: title,
-        rvprop: "ids|timestamp|user|comment|flags|tags|content",
-        rvslots: "main",
+        rvprop: withContent
+          ? "ids|timestamp|user|comment|flags|tags|content"
+          : "ids|timestamp|user|comment|flags|tags|sha1|size",
+        rvslots: withContent ? "main" : undefined,
         rvlimit: "max",
         rvcontinue,
         format: "json",
@@ -127,24 +175,57 @@ async function collectRevisions(
     let added = 0;
     for (const rev of (page?.revisions ?? []) as Record<string, any>[]) {
       if (typeof rev.revid !== "number" || into.has(rev.revid)) continue;
-      into.set(rev.revid, {
-        revid: rev.revid,
-        timestamp:
-          typeof rev.timestamp === "string" ? rev.timestamp : undefined,
-        user: typeof rev.user === "string" ? rev.user : undefined,
-        comment: typeof rev.comment === "string" ? rev.comment : undefined,
-        bot: rev.bot === true,
-        tags: Array.isArray(rev.tags)
-          ? rev.tags.filter((tag: unknown): tag is string => typeof tag === "string")
-          : undefined,
-        content: slotContent(rev),
-      });
+      into.set(rev.revid, revisionFromApi(rev, withContent));
       added += 1;
       if (into.size >= limit) return;
     }
     rvcontinue = data.continue?.rvcontinue as string | undefined;
     if (!rvcontinue || added === 0) return;
   }
+}
+
+async function fetchRevisionContents(
+  ids: readonly number[],
+): Promise<Map<number, string>> {
+  const out = new Map<number, string>();
+  if (ids.length === 0) return out;
+  const data = await wikiApi().get({
+    action: "query",
+    prop: "revisions",
+    revids: ids.join("|"),
+    rvprop: "ids|content",
+    rvslots: "main",
+    format: "json",
+    formatversion: "2",
+  });
+  assertOk(data);
+  for (const page of pageList(data)) {
+    for (const rev of (page?.revisions ?? []) as Record<string, any>[]) {
+      if (typeof rev.revid !== "number") continue;
+      const text = slotContent(rev);
+      if (text != null) out.set(rev.revid, text);
+    }
+  }
+  return out;
+}
+
+function revisionFromApi(
+  rev: Record<string, any>,
+  withContent: boolean,
+): Revision {
+  return {
+    revid: rev.revid,
+    timestamp: typeof rev.timestamp === "string" ? rev.timestamp : undefined,
+    user: typeof rev.user === "string" ? rev.user : undefined,
+    comment: typeof rev.comment === "string" ? rev.comment : undefined,
+    bot: rev.bot === true,
+    tags: Array.isArray(rev.tags)
+      ? rev.tags.filter((tag: unknown): tag is string => typeof tag === "string")
+      : undefined,
+    sha1: typeof rev.sha1 === "string" ? rev.sha1 : undefined,
+    size: typeof rev.size === "number" ? rev.size : undefined,
+    content: withContent ? slotContent(rev) : null,
+  };
 }
 
 export async function latestRevision(

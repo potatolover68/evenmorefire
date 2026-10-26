@@ -77,6 +77,7 @@ class App implements DialogController {
   running = false;
   persisted = false;
   busy = false;
+  progress = "";
   dialog: Morebits_SimpleWindow_Instance | null = null;
   form: HTMLFormElement | null = null;
   private concealed = false;
@@ -315,6 +316,12 @@ class App implements DialogController {
       },
       persist: () => app.persist(),
       refresh: () => app.refresh(),
+      get progress() {
+        return app.progress;
+      },
+      set progress(value: string) {
+        app.progress = value;
+      },
     };
   }
 

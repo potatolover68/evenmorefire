@@ -39,6 +39,22 @@ interface CachedParagraph {
 }
 
 const paragraphCache = new Map<string, CachedParagraph>();
+const textEncoder = new TextEncoder();
+const textDecoder = new TextDecoder();
+
+/** A flat copy that does not keep a sliced parent revision alive. */
+export function ownString(value: string): string {
+  if (value.length === 0) return "";
+  return textDecoder.decode(textEncoder.encode(value));
+}
+
+export function clearParagraphCache(): void {
+  paragraphCache.clear();
+}
+
+export function paragraphCacheSize(): number {
+  return paragraphCache.size;
+}
 
 export function normalizeNewlines(text: string): string {
   return text.includes("\r") ? text.replace(/\r\n?/g, "\n") : text;
@@ -184,8 +200,9 @@ export function flattenSplit(doc: SplitDoc): SplitToken[] {
 function cachedParagraph(key: string): CachedParagraph {
   const hit = paragraphCache.get(key);
   if (hit) return hit;
-  const built = splitTrimmedParagraph(key);
-  paragraphCache.set(key, built);
+  const owned = ownString(key);
+  const built = splitTrimmedParagraph(owned);
+  paragraphCache.set(owned, built);
   return built;
 }
 

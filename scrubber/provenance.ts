@@ -8,6 +8,7 @@ import { myersDiff, type Edit } from "./myers";
 import {
   materializeParagraph,
   normalizeNewlines,
+  ownString,
   paragraphSpans,
   simpleParagraphs,
   type ParaSpan,
@@ -56,11 +57,16 @@ interface RevState {
   gapAfter: Map<number, string>;
 }
 
-export function analyze(
-  revisions: readonly Revision[],
+export interface AnalysisFolder {
+  push(revision: Revision): void;
+  finish(): Analysis;
+}
+
+/** Fold revisions one at a time. The caller can drop each revision's text after `push`. */
+export function openAnalysis(
   tainted: ReadonlySet<number>,
   anchorWindow: number,
-): Analysis {
+): AnalysisFolder {
   const paragraphsByKey = new Map<string, ParagraphObj[]>();
   const sentencesByKey = new Map<string, SentenceObj[]>();
   const tokensById = new Map<number, Token>();
@@ -99,10 +105,7 @@ export function analyze(
   const paraSeen = new WeakMap<ParagraphObj, number>();
   const paraSignature = new WeakMap<ParagraphObj, string>();
   const gapsOf = new WeakMap<ParagraphObj, string[]>();
-  const regionOf = new WeakMap<
-    ParagraphObj,
-    { text: string; start: number; end: number; after: string }
-  >();
+  const regionOf = new WeakMap<ParagraphObj, { key: string; after: string }>();
 
   const createToken = (value: string, origin: number): Token => {
     const token: Token = {
@@ -253,7 +256,7 @@ export function analyze(
       return obj;
     });
     const paragraph: ParagraphObj = {
-      key: split.key,
+      key: ownString(split.key),
       sentences,
       claimedGen: gen,
     };
@@ -278,9 +281,9 @@ export function analyze(
         !region ||
         region.after !== para.after ||
         !sameChars(
-          region.text,
-          region.start,
-          region.end,
+          region.key,
+          0,
+          region.key.length,
           text,
           para.keyStart,
           para.keyEnd,
@@ -302,7 +305,7 @@ export function analyze(
     for (const index of mismatch) {
       const previous = prev.paragraphs[index]!;
       const spec = simple.paras[index]!;
-      const key = text.slice(spec.keyStart, spec.keyEnd);
+      const key = ownString(text.slice(spec.keyStart, spec.keyEnd));
       const span: ParaSpan = {
         key,
         base: spec.keyStart,
@@ -314,11 +317,9 @@ export function analyze(
       const paragraph = retokenize(previous, split, revid);
       rememberGaps(split, paragraph, gapsOf, revid);
       noteGapEdits([paragraph]);
-      paraSignature.set(paragraph, `${key.length}:${key}${spec.after}`);
+      paraSignature.set(paragraph, ownString(`${key.length}:${key}${spec.after}`));
       regionOf.set(paragraph, {
-        text,
-        start: spec.keyStart,
-        end: spec.keyEnd,
+        key,
         after: spec.after,
       });
       paraSeen.set(paragraph, revid);
@@ -366,13 +367,13 @@ export function analyze(
     return true;
   };
 
-  for (const revision of revisions) {
-    if (revision.content == null) continue;
+  const push = (revision: Revision): void => {
+    if (revision.content == null) return;
     gen++;
     const text = normalizeNewlines(revision.content);
     currentRevid = revision.revid;
     prevGapById = prev ? gapMap(prev.paragraphs, gapsOf) : new Map();
-    if (prev && tryPositional(text, revision.revid)) continue;
+    if (prev && tryPositional(text, revision.revid)) return;
     const described = paragraphSpans(text);
     const spans = described.spans;
     const splitOf = new Array<SplitParagraph | null>(spans.length).fill(null);
@@ -606,7 +607,7 @@ export function analyze(
         sentences.push(sentence);
       }
       const paragraph: ParagraphObj = {
-        key: spans[pi]!.key,
+        key: ownString(spans[pi]!.key),
         sentences,
         claimedGen: gen,
       };
@@ -626,16 +627,15 @@ export function analyze(
       const paragraph = paragraphs[pi]!;
       const signature = spans[pi]!.signature;
       regionOf.set(paragraph, {
-        text,
-        start: spans[pi]!.base,
-        end: spans[pi]!.base + spans[pi]!.key.length,
-        after: spans[pi]!.after,
+        key: paragraph.key,
+        after: ownString(spans[pi]!.after),
       });
       if (paraSignature.get(paragraph) === signature && gapsOf.has(paragraph))
         continue;
+      const ownedSignature = ownString(signature);
       rememberGaps(splitAt(pi), paragraph, gapsOf, revision.revid);
       noteGapEdits([paragraph]);
-      paraSignature.set(paragraph, signature);
+      paraSignature.set(paragraph, ownedSignature);
     }
 
     if (prev) {
@@ -702,8 +702,9 @@ export function analyze(
     }
     last = state;
     prev = state;
-  }
+  };
 
+  const finish = (): Analysis => {
   if (!last) {
     return {
       finalRevid: null,
@@ -752,6 +753,19 @@ export function analyze(
     savedRefs,
     sourceRevids,
   };
+  };
+
+  return { push, finish };
+}
+
+export function analyze(
+  revisions: readonly Revision[],
+  tainted: ReadonlySet<number>,
+  anchorWindow: number,
+): Analysis {
+  const folder = openAnalysis(tainted, anchorWindow);
+  for (const revision of revisions) folder.push(revision);
+  return folder.finish();
 }
 
 /** Walk every visible revision and throw if token gaps do not rebuild it. */

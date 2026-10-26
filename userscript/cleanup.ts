@@ -1,30 +1,46 @@
 import { refreshDeprecatedParameters } from "../deprecated/refresh.ts";
-import { cleanTaintedHistory, type Revision } from "../scrubber/index.ts";
-import type { Explanation } from "../scrubber/types.ts";
+import {
+  scrubAnalysis,
+  scrubRollback,
+  type Options,
+} from "../scrubber/index.ts";
+import { openAnalysis } from "../scrubber/provenance.ts";
+import {
+  createRevertTracker,
+  isRevisionHidden,
+  revertRevids,
+  trivialRollback,
+} from "../scrubber/replay.ts";
+import type { Explanation, Revision } from "../scrubber/types.ts";
+import { DEFAULT_OPTIONS } from "../scrubber/types.ts";
+import { clearParagraphCache } from "../scrubber/split.ts";
 import { markArticleCompleted, type RowStatus } from "./aic.ts";
 import { nextContributionsHref, titlesOnPage } from "./contribs.ts";
 import {
   EditConflict,
   expandWikitext,
-  fetchHistory,
+  fetchRevisionText,
   hasCategory,
   hideRevisionContents,
   latestRevision,
   latestRevisionId,
+  listHistoryMeta,
   pageIdOf,
   pageCreationRevid,
   readPage,
   revisionIdsBetween,
   savePage,
+  streamHistoryContent,
   undoRevision,
   userEditorKeys,
 } from "./mediawiki.ts";
-import { openReview } from "./review.ts";
+import { openReview, openReviewTitle } from "./review.ts";
 import {
   preparedReview,
   reviewInflight,
   scheduleReview,
 } from "./review-cache.ts";
+import { releaseIdleContent, loadJobContent } from "./session.ts";
 import { aiTagTemplate, editSummary, prodTemplate } from "./summary.ts";
 import type { CleanupReason, PageJob, Session } from "./types.ts";
 import { defaultCleanup, emptySession } from "./types.ts";
@@ -37,6 +53,7 @@ export interface CleanupHost {
   setRunning(running: boolean): void;
   persist(): Promise<void>;
   refresh(): void;
+  progress: string;
 }
 
 let trackingChain: Promise<void> = Promise.resolve();
@@ -126,6 +143,7 @@ export async function runQueue(host: CleanupHost): Promise<void> {
     }
   } finally {
     host.setRunning(false);
+    host.progress = "";
     if (advanceTo) host.session.autoAdvance = true;
     await host.persist();
     host.refresh();
@@ -200,6 +218,7 @@ export async function reviewSelection(
     user: "",
     session,
     running: true,
+    progress: "",
     setRunning() {},
     persist() {
       return Promise.resolve();
@@ -220,7 +239,7 @@ export async function reviewSelection(
 export async function openJob(host: CleanupHost, title: string): Promise<void> {
   const job = host.session.jobs[title];
   if (!job) return;
-  const proposal = job.content ?? "";
+  const proposal = await jobProposal(host, job);
   const cached = preparedReview(title, job.baseRevid, proposal);
   const reason = requireReason(host);
   const handle = openReview({
@@ -315,41 +334,34 @@ async function processJob(host: CleanupHost, job: PageJob): Promise<void> {
     if (!host.running || host.session.jobs[job.title] !== job) return;
     const oldest = anchorFromMetas(host, job);
     if (oldest == null) throw new Error("No tainted revisions");
-    const history = await fetchHistory(job.title, oldest);
-    if (host.session.jobs[job.title] !== job) return;
-    job.anchorRevid = earliestRevid(history, job.taintedRevids);
-    const result = await cleanTaintedHistory(history, job.taintedRevids, {
-      keepBots: host.session.cleanup.keepBots,
-      onRestoredSection: async (section) =>
-        refreshDeprecatedParameters(
-          section.text,
-          [],
-          section.restoredAt ?? new Date().toISOString(),
-        ),
-    });
-    if (!host.running || host.session.jobs[job.title] !== job) return;
-    const latest = [...history]
-      .reverse()
-      .find((revision) => revision.content != null);
-    job.content = result.content;
-    job.explanations = result.explanations;
-    job.baseRevid = latest?.revid ?? null;
-    job.baseTimestamp = latest?.timestamp ?? null;
-    if (latest?.content != null) {
-      scheduleReview(job.title, latest.content, latest.revid, result.content);
+    const scrubbed = await scrubPage(host, job, oldest);
+    if (!scrubbed) {
+      if (host.session.jobs[job.title] !== job) return;
+      job.status = "pending";
+      await host.persist();
+      host.refresh();
+      return;
     }
+    if (!stillCurrent(host, job)) return;
+    const latest = await latestBody(job.title, scrubbed);
+    if (!stillCurrent(host, job)) return;
+    job.anchorRevid = scrubbed.anchorRevid;
+    job.content = scrubbed.content;
+    job.explanations = scrubbed.explanations;
+    job.baseRevid = latest?.revid ?? scrubbed.latestRevid;
+    job.baseTimestamp = scrubbed.latestTimestamp;
     job.status = "processed";
     await host.persist();
     host.refresh();
-    if (!latest || result.content === latest.content) {
+    if (!latest || scrubbed.content === latest.content) {
       job.status = "skipped";
       await host.persist();
       host.refresh();
       return;
     }
-    const flagged = result.explanations.some(
-      (note) =>
-        note.action.startsWith("flag-") || note.action.startsWith("warn-"),
+    const flagged = scrubbed.explanations.some(
+      (item) =>
+        item.action.startsWith("flag-") || item.action.startsWith("warn-"),
     );
     const auto =
       host.session.cleanup.auto &&
@@ -366,23 +378,25 @@ async function processJob(host: CleanupHost, job: PageJob): Promise<void> {
       auto &&
       job.isNew &&
       host.session.cleanup.llmprod &&
-      result.content.trim() === ""
+      scrubbed.content.trim() === ""
     ) {
-      job.content = latest?.content ?? "";
+      job.content = latest.content;
       job.status = "review";
       job.explanations = [
-        ...result.explanations,
+        ...scrubbed.explanations,
         note("Did not blank this page creation"),
       ];
+      prepareReview(job.title, latest, job.content);
       await host.persist();
       host.refresh();
       return;
     }
     if (auto) {
-      await commitEdit(host, job, result.content, false);
+      await commitEdit(host, job, scrubbed.content, false);
       return;
     }
     job.status = flagged ? "flagged" : "review";
+    prepareReview(job.title, latest, scrubbed.content);
     await host.persist();
     host.refresh();
   } catch (error) {
@@ -402,6 +416,10 @@ async function processJob(host: CleanupHost, job: PageJob): Promise<void> {
     ];
     await host.persist();
     host.refresh();
+  } finally {
+    clearParagraphCache();
+    releaseIdleContent(host.session, openReviewTitle());
+    if (host.progress.startsWith(`${job.title}:`)) host.progress = "";
   }
 }
 
@@ -498,9 +516,9 @@ async function maybeProd(host: CleanupHost, job: PageJob): Promise<boolean> {
       details: [`authorship ${percent.toFixed(1)}%`],
     },
   ];
-  scheduleReview(job.title, latest.content, latest.revid, job.content);
   const automatic = cleanup.llmprodAuto && !cleanup.revdel;
   if (!automatic) {
+    prepareReview(job.title, latest, job.content);
     job.status = prod ? "prod" : "aitag";
     await host.persist();
     host.refresh();
@@ -671,4 +689,160 @@ function note(text: string): Explanation {
     end: [0, 0],
     details: [text],
   };
+}
+
+interface PageScrub {
+  content: string;
+  explanations: Explanation[];
+  latestRevid: number | null;
+  latestTimestamp: string | null;
+  latestContent: string | null;
+  anchorRevid: number | null;
+}
+
+function stillCurrent(host: CleanupHost, job: PageJob): boolean {
+  return host.running && host.session.jobs[job.title] === job;
+}
+
+function restoreOptions(host: CleanupHost): Options {
+  return {
+    keepBots: host.session.cleanup.keepBots,
+    onRestoredSection: async (section) =>
+      refreshDeprecatedParameters(
+        section.text,
+        [],
+        section.restoredAt ?? new Date().toISOString(),
+      ),
+  };
+}
+
+function prepareReview(
+  title: string,
+  latest: { revid: number; content: string },
+  proposal: string,
+): void {
+  scheduleReview(title, latest.content, latest.revid, proposal);
+}
+
+async function jobProposal(host: CleanupHost, job: PageJob): Promise<string> {
+  if (job.content != null) return job.content;
+  const loaded = await loadJobContent(host.session.key, job.title);
+  if (loaded != null) job.content = loaded;
+  return job.content ?? "";
+}
+
+async function latestBody(
+  title: string,
+  scrubbed: PageScrub,
+): Promise<{ revid: number; content: string } | null> {
+  if (scrubbed.latestRevid != null && scrubbed.latestContent != null) {
+    return { revid: scrubbed.latestRevid, content: scrubbed.latestContent };
+  }
+  if (scrubbed.latestRevid == null) return null;
+  return latestRevision(title);
+}
+
+async function scrubPage(
+  host: CleanupHost,
+  job: PageJob,
+  oldest: number,
+): Promise<PageScrub | null> {
+  const metas = await listHistoryMeta(job.title, oldest);
+  if (!stillCurrent(host, job)) return null;
+  const anchorRevid = earliestRevid(metas, job.taintedRevids);
+  const rollback = trivialRollback(
+    metas,
+    new Set(job.taintedRevids),
+    revertRevids(metas),
+    host.session.cleanup.keepBots,
+  );
+  if (rollback && (rollback.emptied || rollback.keptRevid != null)) {
+    let content = rollback.content;
+    if (!rollback.emptied && content == null && rollback.keptRevid != null) {
+      content = await fetchRevisionText(rollback.keptRevid);
+      if (!stillCurrent(host, job)) return null;
+    }
+    const scrub = await scrubRollback(
+      metas,
+      job.taintedRevids,
+      rollback,
+      rollback.emptied ? "" : (content ?? ""),
+      restoreOptions(host),
+    );
+    const latest = [...metas].reverse().find((rev) => !isRevisionHidden(rev));
+    return {
+      content: scrub.content,
+      explanations: scrub.explanations,
+      latestRevid: latest?.revid ?? null,
+      latestTimestamp: latest?.timestamp ?? null,
+      latestContent: null,
+      anchorRevid,
+    };
+  }
+
+  const tainted = new Set(
+    job.taintedRevids.filter((id) => metas.some((rev) => rev.revid === id)),
+  );
+  const folder = openAnalysis(tainted, DEFAULT_OPTIONS.restoreAnchorWindow);
+  const tracker = createRevertTracker();
+  let seen = 0;
+  let aborted = false;
+  let lastYield = performance.now();
+  let latestRevid: number | null = null;
+  let latestTimestamp: string | null = null;
+  let latestContent: string | null = null;
+  await streamHistoryContent(metas, async (batch) => {
+    for (const rev of batch) {
+      if (aborted) return false;
+      if (rev.content != null) {
+        latestRevid = rev.revid;
+        latestTimestamp = rev.timestamp ?? null;
+        latestContent = rev.content;
+      }
+      tracker.push(rev);
+      folder.push(rev);
+      rev.content = null;
+      seen += 1;
+      const now = performance.now();
+      if (now - lastYield < 40) continue;
+      lastYield = now;
+      host.progress = `${job.title}: revision ${seen} of ${metas.length}`;
+      host.refresh();
+      await yieldToBrowser();
+      if (!stillCurrent(host, job)) {
+        aborted = true;
+        return false;
+      }
+    }
+    return true;
+  });
+  if (aborted) return null;
+  const scrub = await scrubAnalysis(
+    metas,
+    job.taintedRevids,
+    folder.finish(),
+    tracker.revids(),
+    restoreOptions(host),
+  );
+  return {
+    content: scrub.content,
+    explanations: scrub.explanations,
+    latestRevid,
+    latestTimestamp,
+    latestContent,
+    anchorRevid,
+  };
+}
+
+async function yieldToBrowser(): Promise<void> {
+  const scheduler = (
+    globalThis as { scheduler?: { yield?: () => Promise<void> } }
+  ).scheduler;
+  if (typeof scheduler?.yield === "function") {
+    await scheduler.yield();
+    return;
+  }
+  await new Promise<void>((resolve) => {
+    setTimeout(resolve, 0);
+  });
 }
