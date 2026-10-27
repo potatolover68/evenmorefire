@@ -639,12 +639,16 @@ export async function hideRevisionContents(
   }
 }
 
+const EDIT_TAG = "even more fire!";
+
 async function postEdit(
   params: Record<string, string>,
 ): Promise<Record<string, any>> {
+  const tagged =
+    params.action === "edit" ? { ...params, tags: EDIT_TAG } : params;
   const api = wikiApi();
-  if (api.postWithEditToken) return api.postWithEditToken(params);
-  if (api.postWithToken) return api.postWithToken("csrf", params);
+  if (api.postWithEditToken) return api.postWithEditToken(tagged);
+  if (api.postWithToken) return api.postWithToken("csrf", tagged);
   const token = await api.get({
     action: "query",
     meta: "tokens",
@@ -654,7 +658,7 @@ async function postEdit(
   });
   const csrf = token.query?.tokens?.csrftoken as string | undefined;
   if (!csrf) throw new WikiError("No edit token");
-  return api.post({ ...params, token: csrf });
+  return api.post({ ...tagged, token: csrf });
 }
 
 function asContrib(row: Record<string, any>): Contrib {
