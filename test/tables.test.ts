@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { cleanTaintedHistory } from "../scrubber/index.ts";
 import { stripNakedTables } from "../scrubber/tables.ts";
 import {
+  dropCreationKinds,
   matchContrib,
   defaultFilters,
   type Contrib,
@@ -121,6 +122,32 @@ describe("page creation filters", () => {
         createdBy,
       ),
     ).toBe(true);
+  });
+
+  it("drops disambiguations and redirects only for creation-only results", () => {
+    const other = { ...created, revid: 8, title: "Kept" };
+    const dab = { ...created, revid: 9, title: "Foo (disambiguation)" };
+    const redirect = { ...created, revid: 10, title: "Alias" };
+    const kinds = new Map([
+      ["Foo (disambiguation)", { redirect: false, disambiguation: true }],
+      ["Alias", { redirect: true, disambiguation: false }],
+    ]);
+    const config = {
+      ...defaultFilters(),
+      includeCreations: true,
+      excludeDisambiguations: true,
+      excludeRedirects: true,
+    };
+    expect(dropCreationKinds([other, dab, redirect], config, kinds)).toEqual([
+      other,
+    ]);
+    expect(
+      dropCreationKinds(
+        [dab, redirect],
+        { ...config, includeCreations: false },
+        kinds,
+      ),
+    ).toEqual([dab, redirect]);
   });
 });
 

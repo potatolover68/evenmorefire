@@ -30,6 +30,8 @@ export function defaultFilters(): FilterConfig {
     excludeCreations: false,
     excludeFollowups: false,
     includeCreations: false,
+    excludeDisambiguations: false,
+    excludeRedirects: false,
     summaryRegex: "",
     summaryCaseSensitive: false,
     namespaces: [0],
@@ -98,6 +100,36 @@ export function matchContrib(
   }
   if (config.includeCreations && !contrib.isNew) return false;
   return true;
+}
+
+export function pageKey(title: string): string {
+  return title.trim().replace(/_/g, " ").replace(/\s+/g, " ");
+}
+
+export interface PageKind {
+  redirect: boolean;
+  disambiguation: boolean;
+}
+
+/** Drop creations that the batch page check marked as a redirect or disambiguation. */
+export function dropCreationKinds(
+  contribs: readonly Contrib[],
+  config: FilterConfig,
+  kinds: ReadonlyMap<string, PageKind>,
+): Contrib[] {
+  if (
+    !config.includeCreations ||
+    (!config.excludeDisambiguations && !config.excludeRedirects)
+  ) {
+    return [...contribs];
+  }
+  return contribs.filter((contrib) => {
+    const kind = kinds.get(pageKey(contrib.title));
+    if (!kind) return true;
+    if (config.excludeDisambiguations && kind.disambiguation) return false;
+    if (config.excludeRedirects && kind.redirect) return false;
+    return true;
+  });
 }
 
 export function isAutomated(

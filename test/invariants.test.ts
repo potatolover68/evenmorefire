@@ -86,10 +86,9 @@ describe("invariants", () => {
   });
 
   it("keeps a paragraph when a tainted edit only inserts a line and is reverted", () => {
-    const paragraph =
-      "A day after the attack, the governor called a meeting.";
+    const paragraph = "A day after the attack, the governor called a meeting.";
     const image =
-      '[[File:CJNG_Logo.svg|right|thumb|250x250px|Logo of the Jalisco New Generation Cartel (CJNG)]]';
+      "[[File:CJNG_Logo.svg|right|thumb|250x250px|Logo of the Jalisco New Generation Cartel (CJNG)]]";
     const parent = `${paragraph}\n\n== Background ==\n\nNext.\n`;
     const edited = `${paragraph}\n${image}\n\n== Background ==\n\nNext.\n`;
     const result = cleanTaintedHistory(
@@ -119,9 +118,9 @@ describe("invariants", () => {
       { revid: 3, content: tainted, user: "Jvguidi" },
     ];
     expect(cleanTaintedHistory(revisions, [3]).content).toBe(bottled);
-    expect(cleanTaintedHistory(revisions, [3], { keepBots: true }).content).toBe(
-      bottled,
-    );
+    expect(
+      cleanTaintedHistory(revisions, [3], { keepBots: true }).content,
+    ).toBe(bottled);
   });
 
   it("rolls through a bot edit in the middle of a tainted run", () => {
@@ -177,8 +176,7 @@ describe("invariants", () => {
       { tags: ["OAuth CID: 2922"] },
       { comment: "Filled in 2 bare reference(s) with reFill 2" },
       {
-        comment:
-          "Reference edited with [[Wikipedia:ProveIt|ProveIt]] #proveit",
+        comment: "Reference edited with [[Wikipedia:ProveIt|ProveIt]] #proveit",
       },
     ];
     for (const maintenance of cases) {
@@ -206,7 +204,10 @@ describe("invariants", () => {
           user: "Someone",
           comment: "Refilled 1 reference using reFill",
         },
-        { revid: 4, content: "Alpha. Tainted.<ref>https://example.com</ref> More." },
+        {
+          revid: 4,
+          content: "Alpha. Tainted.<ref>https://example.com</ref> More.",
+        },
       ],
       [2, 4],
     );
@@ -314,7 +315,8 @@ describe("invariants", () => {
       [
         {
           revid: 1,
-          content: "<ref>{{cite web|title=Survey|url=https://example.com}}</ref>",
+          content:
+            "<ref>{{cite web|title=Survey|url=https://example.com}}</ref>",
         },
         {
           revid: 2,

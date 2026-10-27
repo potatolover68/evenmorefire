@@ -193,8 +193,7 @@ function paintStatus(
     (item) => item.action === "llm-prod",
   );
   const ai =
-    !prod &&
-    found.job.explanations.some((item) => item.action === "ai-tag");
+    !prod && found.job.explanations.some((item) => item.action === "ai-tag");
   const label = prod
     ? "LLMPROD"
     : ai

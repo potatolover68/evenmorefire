@@ -99,6 +99,7 @@ function cleanLoadedHistory(
     tainted,
     reverts,
     options?.keepBots === true,
+    options?.skipNonProse === true,
   );
   if (rollback && (rollback.emptied || rollback.content != null)) {
     return scrubRollback(
@@ -110,14 +111,13 @@ function cleanLoadedHistory(
     );
   }
 
-  const analysis = analyze(revisions, tainted, opts.restoreAnchorWindow);
-  return scrubAnalysis(
+  const analysis = analyze(
     revisions,
-    taintedRevids,
-    analysis,
-    reverts,
-    options,
+    tainted,
+    opts.restoreAnchorWindow,
+    options?.skipNonProse === true,
   );
+  return scrubAnalysis(revisions, taintedRevids, analysis, reverts, options);
 }
 
 function collectWarnings(

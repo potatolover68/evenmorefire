@@ -18,7 +18,11 @@ import {
   saveSessionTo,
   type SessionDepot,
 } from "../userscript/session.ts";
-import { emptySession, type PageJob, type Session } from "../userscript/types.ts";
+import {
+  emptySession,
+  type PageJob,
+  type Session,
+} from "../userscript/types.ts";
 
 function memoryDepot(): SessionDepot {
   const sessions = new Map<string, Session>();
@@ -79,7 +83,10 @@ describe("scrub memory", () => {
 
   it("folds a page the same way as the array scrub", () => {
     const fixture = JSON.parse(
-      readFileSync(new URL("./fixtures/markup-rewrite.json", import.meta.url), "utf8"),
+      readFileSync(
+        new URL("./fixtures/markup-rewrite.json", import.meta.url),
+        "utf8",
+      ),
     ) as { revisions: Revision[]; tainted: number[] };
     const direct = cleanTaintedHistory(fixture.revisions, fixture.tainted);
     const tainted = new Set(
@@ -120,7 +127,10 @@ describe("scrub memory", () => {
       { revid: 3, content: "Tainted.\n\nGamma." },
     ];
     const direct = cleanTaintedHistory(revisions, [2]);
-    const folder = openAnalysis(new Set([2]), DEFAULT_OPTIONS.restoreAnchorWindow);
+    const folder = openAnalysis(
+      new Set([2]),
+      DEFAULT_OPTIONS.restoreAnchorWindow,
+    );
     for (const revision of revisions) folder.push(revision);
     const folded = scrubAnalysis(
       revisions,
@@ -142,18 +152,19 @@ describe("scrub memory", () => {
       content: null,
       sha1: revision.content ?? "",
     }));
-    const reverted: Revision[] = [
-      ...loaded,
-      { revid: 3, content: "Alpha." },
-    ];
+    const reverted: Revision[] = [...loaded, { revid: 3, content: "Alpha." }];
     const revertedMeta: Revision[] = reverted.map((revision) => ({
       revid: revision.revid,
       content: null,
       sha1: revision.content ?? "",
     }));
-    expect([...revertRevids(revertedMeta)]).toEqual([...revertRevids(reverted)]);
+    expect([...revertRevids(revertedMeta)]).toEqual([
+      ...revertRevids(reverted),
+    ]);
     expect([...revertRevids(meta)]).toEqual([...revertRevids(loaded)]);
-    expect(trivialRollback(meta, new Set([2]), revertRevids(meta))).toMatchObject({
+    expect(
+      trivialRollback(meta, new Set([2]), revertRevids(meta)),
+    ).toMatchObject({
       keptRevid: 1,
       content: null,
       undone: [2],
@@ -186,13 +197,17 @@ describe("session bodies", () => {
     await saveSessionTo(depot, session, written);
     const stored = await depot.getSession(session.key);
     expect(stored?.jobs.Example?.content).toBeNull();
-    expect(await loadBodyFrom(depot, session.key, "Example")).toBe("Hello page");
+    expect(await loadBodyFrom(depot, session.key, "Example")).toBe(
+      "Hello page",
+    );
     expect(bodyStorageKey(session.key, "Example")).toContain("Example");
     releaseIdleContentFrom(session, null, written);
     expect(session.jobs.Example?.content).toBeNull();
     const loaded = await loadSessionFrom(depot, session.key);
     expect(loaded?.jobs.Example?.content).toBeNull();
-    expect(await loadBodyFrom(depot, session.key, "Example")).toBe("Hello page");
+    expect(await loadBodyFrom(depot, session.key, "Example")).toBe(
+      "Hello page",
+    );
   });
 
   it("moves inline text from an older session into the bodies store", async () => {

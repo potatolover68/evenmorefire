@@ -81,6 +81,14 @@ export function updateButtons(controller: DialogController): void {
   if (!root || !form) return;
   const step = controller.session.step;
   if (step === 1) {
+    const creationsOnly =
+      box(form, "includeCreations") && !box(form, "excludeCreations");
+    for (const name of ["excludeDisambiguations", "excludeRedirects"]) {
+      const input = form.querySelector<HTMLInputElement>(
+        `input[name="${name}"]`,
+      );
+      if (input) input.disabled = !creationsOnly;
+    }
     const read = readFilters(form, controller.namespaces);
     showError(form, read.error);
     const dirty =
@@ -308,8 +316,22 @@ function appendFilters(
       {
         name: "includeCreations",
         value: "yes",
-        label: "Include page creations",
+        label: "Only include page creations",
         checked: filters.includeCreations && !filters.excludeCreations,
+      },
+      {
+        name: "excludeDisambiguations",
+        value: "yes",
+        label: "Exclude disambiguation pages",
+        checked: filters.excludeDisambiguations,
+        disabled: !filters.includeCreations || filters.excludeCreations,
+      },
+      {
+        name: "excludeRedirects",
+        value: "yes",
+        label: "Exclude redirects",
+        checked: filters.excludeRedirects,
+        disabled: !filters.includeCreations || filters.excludeCreations,
       },
     ],
   });
@@ -357,6 +379,19 @@ function appendCleanup(
         value: "yes",
         label: "Do not undo bot edits",
         checked: cleanup.keepBots,
+      },
+    ],
+  });
+  form.append({
+    type: "checkbox",
+    list: [
+      {
+        name: "skipNonProse",
+        value: "yes",
+        label: "Skip non-prose edits (experimental)",
+        checked: cleanup.skipNonProse,
+        tooltip:
+          "Keep tables, infoboxes, categories, references, files, and short descriptions. Prose from a tainted edit is still removed.",
       },
     ],
   });
@@ -573,6 +608,8 @@ function readFilters(
       excludeFollowups: box(form, "excludeFollowups"),
       includeCreations:
         box(form, "includeCreations") && !box(form, "excludeCreations"),
+      excludeDisambiguations: box(form, "excludeDisambiguations"),
+      excludeRedirects: box(form, "excludeRedirects"),
       summaryRegex,
       summaryCaseSensitive: box(form, "caseSensitive"),
       namespaces: checked.length === namespaces.length ? null : checked,
@@ -609,6 +646,7 @@ function readCleanup(form: HTMLFormElement): {
       auto: box(form, "auto"),
       revdel: box(form, "revdel"),
       keepBots: box(form, "keepBots"),
+      skipNonProse: box(form, "skipNonProse"),
       trackingPage: text(form, "tracking"),
       summary: text(form, "summary"),
       reason,

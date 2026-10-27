@@ -16,6 +16,7 @@ import {
   type SplitSentence,
 } from "./split";
 import { scanTokens } from "./wikiscan";
+import { insideSpan, nonProseSpans } from "./nonprose";
 import type {
   Hunk,
   ParagraphObj,
@@ -66,6 +67,7 @@ export interface AnalysisFolder {
 export function openAnalysis(
   tainted: ReadonlySet<number>,
   anchorWindow: number,
+  skipNonProse = false,
 ): AnalysisFolder {
   const paragraphsByKey = new Map<string, ParagraphObj[]>();
   const sentencesByKey = new Map<string, SentenceObj[]>();
@@ -107,7 +109,15 @@ export function openAnalysis(
   const gapsOf = new WeakMap<ParagraphObj, string[]>();
   const regionOf = new WeakMap<ParagraphObj, { key: string; after: string }>();
 
-  const createToken = (value: string, origin: number): Token => {
+  let activeSpans: Array<[number, number]> | null = null;
+  const structuralAt = (start: number, end: number) =>
+    activeSpans != null && insideSpan(activeSpans, start, end);
+
+  const createToken = (
+    value: string,
+    origin: number,
+    structural = false,
+  ): Token => {
     const token: Token = {
       id: nextId++,
       value,
@@ -115,6 +125,7 @@ export function openAnalysis(
       events: [],
       lastSeenRev: origin,
       claimedGen: gen,
+      structural: structural || undefined,
     };
     tokensById.set(token.id, token);
     return token;
@@ -176,7 +187,11 @@ export function openAnalysis(
             claimToken(token);
             placedRow[local] = token;
           } else {
-            const created = createToken(currTokens[local]!.value, revid);
+            const created = createToken(
+              currTokens[local]!.value,
+              revid,
+              currTokens[local]!.structural === true,
+            );
             placedRow[local] = created;
             inserted?.push(created.id);
           }
@@ -189,7 +204,11 @@ export function openAnalysis(
         }
       } else {
         for (let k = edit.bStart; k < edit.bEnd; k++) {
-          const created = createToken(currTokens[k]!.value, revid);
+          const created = createToken(
+            currTokens[k]!.value,
+            revid,
+            currTokens[k]!.structural === true,
+          );
           placedRow[k] = created;
           inserted?.push(created.id);
         }
@@ -206,6 +225,7 @@ export function openAnalysis(
       sentence.tokens.map((token) => ({
         value: token.value,
         gapAfter: token.gapAfter,
+        structural: structuralAt(token.start, token.end),
       })),
     );
     const alignment = alignSentences(
@@ -230,7 +250,11 @@ export function openAnalysis(
     for (const index of alignment.inserted) {
       const currTokens = currSides[index]!;
       for (let k = 0; k < currTokens.length; k++) {
-        placed[index]![k] = createToken(currTokens[k]!.value, revid);
+        placed[index]![k] = createToken(
+          currTokens[k]!.value,
+          revid,
+          currTokens[k]!.structural === true,
+        );
       }
     }
     const prevTokens = previous.sentences.flatMap(
@@ -317,7 +341,10 @@ export function openAnalysis(
       const paragraph = retokenize(previous, split, revid);
       rememberGaps(split, paragraph, gapsOf, revid);
       noteGapEdits([paragraph]);
-      paraSignature.set(paragraph, ownString(`${key.length}:${key}${spec.after}`));
+      paraSignature.set(
+        paragraph,
+        ownString(`${key.length}:${key}${spec.after}`),
+      );
       regionOf.set(paragraph, {
         key,
         after: spec.after,
@@ -371,6 +398,7 @@ export function openAnalysis(
     if (revision.content == null) return;
     gen++;
     const text = normalizeNewlines(revision.content);
+    activeSpans = skipNonProse ? nonProseSpans(text) : null;
     currentRevid = revision.revid;
     prevGapById = prev ? gapMap(prev.paragraphs, gapsOf) : new Map();
     if (prev && tryPositional(text, revision.revid)) return;
@@ -533,6 +561,7 @@ export function openAnalysis(
         tokens.map((token) => ({
           value: token.value,
           gapAfter: token.gapAfter,
+          structural: structuralAt(token.start, token.end),
         })),
       );
       const alignment = alignSentences(
@@ -554,7 +583,11 @@ export function openAnalysis(
       for (const index of alignment.inserted) {
         const currTokens = currSides[index]!;
         for (let k = 0; k < currTokens.length; k++) {
-          const token = createToken(currTokens[k]!.value, revision.revid);
+          const token = createToken(
+            currTokens[k]!.value,
+            revision.revid,
+            currTokens[k]!.structural === true,
+          );
           placed[index]![k] = token;
           insertedIds[index]!.push(token.id);
         }
@@ -705,14 +738,46 @@ export function openAnalysis(
   };
 
   const finish = (): Analysis => {
-  if (!last) {
+    if (!last) {
+      return {
+        finalRevid: null,
+        finalText: "",
+        finalLeading: "",
+        finalTokens: [],
+        finalGapAfter: new Map(),
+        finalSentences: [],
+        hunks,
+        taintedMoves,
+        paraphrase,
+        tokensById,
+        sources,
+        savedRefs,
+        sourceRevids,
+      };
+    }
+
+    const finalGaps = gapMap(last.paragraphs, gapsOf);
+    for (const [id, gap] of restoredGaps) {
+      if (finalGaps.has(id)) finalGaps.set(id, gap);
+    }
+    last.gapAfter = finalGaps;
+    captureRefs(
+      last.revid,
+      flatten(last.paragraphs),
+      finalGaps,
+      tainted,
+      tokensById,
+      savedRefs,
+    );
     return {
-      finalRevid: null,
-      finalText: "",
-      finalLeading: "",
-      finalTokens: [],
-      finalGapAfter: new Map(),
-      finalSentences: [],
+      finalRevid: last.revid,
+      finalText: last.text,
+      finalLeading: last.leadingGap,
+      finalTokens: flatten(last.paragraphs),
+      finalGapAfter: finalGaps,
+      finalSentences: last.paragraphs.flatMap((paragraph) =>
+        paragraph.sentences.map((sentence) => sentence.tokens),
+      ),
       hunks,
       taintedMoves,
       paraphrase,
@@ -721,38 +786,6 @@ export function openAnalysis(
       savedRefs,
       sourceRevids,
     };
-  }
-
-  const finalGaps = gapMap(last.paragraphs, gapsOf);
-  for (const [id, gap] of restoredGaps) {
-    if (finalGaps.has(id)) finalGaps.set(id, gap);
-  }
-  last.gapAfter = finalGaps;
-  captureRefs(
-    last.revid,
-    flatten(last.paragraphs),
-    finalGaps,
-    tainted,
-    tokensById,
-    savedRefs,
-  );
-  return {
-    finalRevid: last.revid,
-    finalText: last.text,
-    finalLeading: last.leadingGap,
-    finalTokens: flatten(last.paragraphs),
-    finalGapAfter: finalGaps,
-    finalSentences: last.paragraphs.flatMap((paragraph) =>
-      paragraph.sentences.map((sentence) => sentence.tokens),
-    ),
-    hunks,
-    taintedMoves,
-    paraphrase,
-    tokensById,
-    sources,
-    savedRefs,
-    sourceRevids,
-  };
   };
 
   return { push, finish };
@@ -762,8 +795,9 @@ export function analyze(
   revisions: readonly Revision[],
   tainted: ReadonlySet<number>,
   anchorWindow: number,
+  skipNonProse = false,
 ): Analysis {
-  const folder = openAnalysis(tainted, anchorWindow);
+  const folder = openAnalysis(tainted, anchorWindow, skipNonProse);
   for (const revision of revisions) folder.push(revision);
   return folder.finish();
 }

@@ -14,7 +14,11 @@ import { defaultFilters } from "../userscript/filters.ts";
 import type { FilterConfig, PageJob } from "../userscript/types.ts";
 import { countEdits } from "../userscript/types.ts";
 import { markArticleCompleted } from "../userscript/aic.ts";
-import { aiTagTemplate, editSummary, prodTemplate } from "../userscript/summary.ts";
+import {
+  aiTagTemplate,
+  editSummary,
+  prodTemplate,
+} from "../userscript/summary.ts";
 import { tokenEditors } from "../userscript/wikiwho.ts";
 
 function contrib(patch: Partial<Contrib> = {}): Contrib {

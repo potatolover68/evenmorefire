@@ -126,7 +126,10 @@ function idbDepot(): SessionDepot {
     async putBody(key, content) {
       const db = await openDb();
       await requestDone(
-        db.transaction(BODIES, "readwrite").objectStore(BODIES).put(content, key),
+        db
+          .transaction(BODIES, "readwrite")
+          .objectStore(BODIES)
+          .put(content, key),
       );
     },
     async deleteSession(key) {

@@ -55,7 +55,10 @@ function rewriteRow(
   if (slot) {
     if (statusRank(slot.param.value) >= statusRank(status)) return body;
     const nextParams = params.slice();
-    nextParams[slot.index] = replacePositional(params[slot.index] ?? "", status);
+    nextParams[slot.index] = replacePositional(
+      params[slot.index] ?? "",
+      status,
+    );
     return wrap(name, nextParams);
   }
   return `${body.slice(0, -2)}|status=${status}}}`;

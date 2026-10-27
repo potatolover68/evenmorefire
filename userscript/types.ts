@@ -31,6 +31,10 @@ export interface FilterConfig {
   excludeFollowups: boolean;
   /** When set, only page creations match. */
   includeCreations: boolean;
+  /** Drop creations in Category:All disambiguation pages. Applies only with includeCreations. */
+  excludeDisambiguations: boolean;
+  /** Drop creations that are redirects. Applies only with includeCreations. */
+  excludeRedirects: boolean;
   /** Null means every namespace. */
   namespaces: number[] | null;
 }
@@ -49,6 +53,8 @@ export interface CleanupConfig {
   aiTagPercent: number | null;
   /** Leave bot and maintenance edits in place. */
   keepBots: boolean;
+  /** Keep tables, infoboxes, categories, references, files, and short descriptions. */
+  skipNonProse: boolean;
 }
 
 export interface RevisionMeta {
@@ -105,6 +111,7 @@ export function defaultCleanup(): CleanupConfig {
     aiTag: false,
     aiTagPercent: null,
     keepBots: false,
+    skipNonProse: false,
   };
 }
 
@@ -196,5 +203,6 @@ function normalizeCleanup(config: CleanupConfig): CleanupConfig {
     aiTag: config.aiTag === true,
     aiTagPercent: config.aiTagPercent ?? null,
     keepBots: config.keepBots === true,
+    skipNonProse: config.skipNonProse === true,
   };
 }

@@ -1,9 +1,15 @@
 import { describe, expect, it } from "vitest";
 import type { AlignedRow } from "../userscript/align.ts";
-import { displaySlots, foldLabel, spanBox, layoutDisplay } from "../userscript/folds.ts";
+import {
+  displaySlots,
+  foldLabel,
+  spanBox,
+  layoutDisplay,
+} from "../userscript/folds.ts";
 
 function row(text: string | null, changed = false): AlignedRow {
-  if (changed) return { before: text, after: null, beforeLine: 0, afterLine: null };
+  if (changed)
+    return { before: text, after: null, beforeLine: 0, afterLine: null };
   return { before: text, after: text, beforeLine: 0, afterLine: 0 };
 }
 
@@ -32,24 +38,16 @@ describe("unchanged folds", () => {
     expect(slots[0]).toMatchObject({ kind: "line", index: 0 });
     expect(slots[1]).toMatchObject({ kind: "fold", key: 0, start: 1, end: 3 });
     expect(slots[2]).toMatchObject({ kind: "line", index: 4 });
-    expect(foldLabel(slots[1] as Extract<(typeof slots)[number], { kind: "fold" }>)).toBe(
-      "3 unchanged lines",
-    );
+    expect(
+      foldLabel(slots[1] as Extract<(typeof slots)[number], { kind: "fold" }>),
+    ).toBe("3 unchanged lines");
   });
 
   it("shows every line of an expanded run, with a control to hide them", () => {
     const slots = displaySlots(rows, new Set([0]));
-    expect(slots.map((slot) => (slot.kind === "line" ? slot.index : "fold"))).toEqual([
-      0,
-      "fold",
-      1,
-      2,
-      3,
-      4,
-      5,
-      6,
-      7,
-    ]);
+    expect(
+      slots.map((slot) => (slot.kind === "line" ? slot.index : "fold")),
+    ).toEqual([0, "fold", 1, 2, 3, 4, 5, 6, 7]);
   });
 
   it("places a bar on the fold when its rows are hidden", () => {

@@ -84,6 +84,12 @@ export interface Options {
    */
   keepBots?: boolean;
   /**
+   * Keep tables, infoboxes, categories, references, files, and short
+   * descriptions from a tainted revision. Prose from that revision is still
+   * removed.
+   */
+  skipNonProse?: boolean;
+  /**
    * When set, `cleanTaintedHistory` returns a promise and runs this on each
    * restored section after orphan rescue.
    */
@@ -128,6 +134,8 @@ export interface Token {
   events: TokenEvent[];
   lastSeenRev: number;
   claimedGen: number;
+  /** Inside a table, block template, category, reference, or file. */
+  structural?: boolean;
 }
 
 export interface SentenceObj {

@@ -41,7 +41,9 @@ let lock = false;
 let observer: ResizeObserver | null = null;
 
 const reviewable = computed(() =>
-  ["processed", "flagged", "review", "prod", "aitag"].includes(props.state.status),
+  ["processed", "flagged", "review", "prod", "aitag"].includes(
+    props.state.status,
+  ),
 );
 const rows = computed(() => props.state.rows ?? []);
 const chars = computed(() => charsAcross(paneWidth.value, charPx.value));
@@ -315,7 +317,9 @@ onUnmounted(() => observer?.disconnect());
             <div
               v-if="item.slot.kind === 'line'"
               class="line"
-              :class="lineClass(item.slot.index, 'before', rows[item.slot.index]!)"
+              :class="
+                lineClass(item.slot.index, 'before', rows[item.slot.index]!)
+              "
               :style="slotStyle(item.slotIndex)"
             >
               {{ rows[item.slot.index]?.before ?? "" }}
@@ -359,7 +363,9 @@ onUnmounted(() => observer?.disconnect());
             <div
               v-if="item.slot.kind === 'line'"
               class="line"
-              :class="lineClass(item.slot.index, 'after', rows[item.slot.index]!)"
+              :class="
+                lineClass(item.slot.index, 'after', rows[item.slot.index]!)
+              "
               :style="slotStyle(item.slotIndex)"
             >
               {{ rows[item.slot.index]?.after ?? "" }}

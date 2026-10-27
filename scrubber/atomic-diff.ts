@@ -5,6 +5,8 @@ import { MYERS_TOKEN_CAP, SENTENCE_REUSE_THRESHOLD } from "./types";
 export interface TextToken {
   value: string;
   gapAfter: string;
+  /** The token's source range sits in a non-prose span. */
+  structural?: boolean;
 }
 
 export interface SentenceAlignment {

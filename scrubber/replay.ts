@@ -1,11 +1,9 @@
+import { nonProseChanged } from "./nonprose";
 import type { Revision, Token } from "./types";
 import { REVERT_LOOKBACK } from "./types";
 import { normalizeNewlines } from "./split";
 
-const MAINTENANCE_TAGS = new Set([
-  "OAuth CID: 678",
-  "OAuth CID: 2922",
-]);
+const MAINTENANCE_TAGS = new Set(["OAuth CID: 678", "OAuth CID: 2922"]);
 
 /** Bot accounts, and maintenance tools such as reFill, ProveIt, or IABot. */
 export function isMaintenance(revision: Revision): boolean {
@@ -87,6 +85,7 @@ export function trivialRollback(
   tainted: ReadonlySet<number>,
   reverts: ReadonlySet<number>,
   keepBots = false,
+  skipNonProse = false,
 ): TrivialRollback | null {
   const undone: number[] = [];
   let kept: Revision | null = null;
@@ -111,6 +110,7 @@ export function trivialRollback(
       kept = revision;
       break;
     }
+    if (skipNonProse && revisionTouchesNonProse(revisions, i)) return null;
     undone.push(revision.revid);
   }
   if (undone.length === 0) return null;
@@ -130,6 +130,19 @@ export function trivialRollback(
   };
 }
 
+function revisionTouchesNonProse(
+  revisions: readonly Revision[],
+  index: number,
+): boolean {
+  const text = revisions[index]?.content;
+  if (text == null) return true;
+  const parent = index > 0 ? revisions[index - 1]?.content : null;
+  return nonProseChanged(
+    parent == null ? "" : normalizeNewlines(parent),
+    normalizeNewlines(text),
+  );
+}
+
 /** Index of the nearest older non-bot revision, or -1. `"hidden"` when a deleted revision blocks the walk. */
 function olderSolid(
   revisions: readonly Revision[],
@@ -143,13 +156,13 @@ function olderSolid(
   return -1;
 }
 
-/** Origin-tainted tokens stay out. Tainted events are ignored unless that revision is an exact revert. */
+/** Origin-tainted tokens stay out, except structural non-prose. Tainted events are ignored unless that revision is an exact revert. */
 export function isPresent(
   token: Token,
   tainted: ReadonlySet<number>,
   reverts: ReadonlySet<number>,
 ): boolean {
-  if (tainted.has(token.origin)) return false;
+  if (tainted.has(token.origin) && !token.structural) return false;
   const evs = token.events.filter(
     (event) => !tainted.has(event.rev) || reverts.has(event.rev),
   );

@@ -1,5 +1,11 @@
 import type { Revision } from "../scrubber/types.ts";
-import { toolsForWiki, type AutoTool, type Contrib } from "./filters.ts";
+import {
+  pageKey,
+  toolsForWiki,
+  type AutoTool,
+  type Contrib,
+  type PageKind,
+} from "./filters.ts";
 import type { FilterConfig } from "./types.ts";
 
 export class WikiError extends Error {}
@@ -104,7 +110,9 @@ export async function streamHistoryContent(
   const size = 50;
   for (let i = 0; i < metas.length; i += size) {
     const batch = metas.slice(i, i + size).map((meta) => ({ ...meta }));
-    const contents = await fetchRevisionContents(batch.map((meta) => meta.revid));
+    const contents = await fetchRevisionContents(
+      batch.map((meta) => meta.revid),
+    );
     for (const meta of batch) meta.content = contents.get(meta.revid) ?? null;
     const keepGoing = await onBatch(batch);
     if (keepGoing === false) return;
@@ -220,7 +228,9 @@ function revisionFromApi(
     comment: typeof rev.comment === "string" ? rev.comment : undefined,
     bot: rev.bot === true,
     tags: Array.isArray(rev.tags)
-      ? rev.tags.filter((tag: unknown): tag is string => typeof tag === "string")
+      ? rev.tags.filter(
+          (tag: unknown): tag is string => typeof tag === "string",
+        )
       : undefined,
     sha1: typeof rev.sha1 === "string" ? rev.sha1 : undefined,
     size: typeof rev.size === "number" ? rev.size : undefined,
@@ -345,7 +355,8 @@ export async function expandWikitext(
     });
     assertOk(data);
     const wikitext = pstWikitext(data);
-    if (wikitext == null || wikitext === current || /^\s*</.test(wikitext)) break;
+    if (wikitext == null || wikitext === current || /^\s*</.test(wikitext))
+      break;
     current = wikitext;
   }
   // A leftover subst tag must keep {{!}}, or the pipe splits its parameters.
@@ -360,7 +371,9 @@ function pstWikitext(data: Record<string, any>): string | null {
 }
 
 function pipesInLinks(text: string): string {
-  return text.replace(/\[\[[^\]]*\]\]/g, (link) => link.replaceAll("{{!}}", "|"));
+  return text.replace(/\[\[[^\]]*\]\]/g, (link) =>
+    link.replaceAll("{{!}}", "|"),
+  );
 }
 
 export async function previewWikitext(
@@ -380,7 +393,8 @@ export async function previewWikitext(
   });
   assertOk(data);
   const html = data.parse?.text;
-  if (typeof html !== "string") throw new WikiError("Could not preview the edit");
+  if (typeof html !== "string")
+    throw new WikiError("Could not preview the edit");
   return html;
 }
 
@@ -414,6 +428,79 @@ export async function titlesCreatedBy(
     uccontinue = data.continue?.uccontinue as string | undefined;
   } while (uccontinue);
   return created;
+}
+
+const DAB_CATEGORY = "Category:All disambiguation pages";
+const TITLE_BATCH = 50;
+
+/**
+ * Redirect flag and disambiguation category for these titles.
+ * One query per 50 titles, which is the anonymous title limit.
+ */
+export async function pageKinds(
+  titles: readonly string[],
+): Promise<Map<string, PageKind>> {
+  const out = new Map<string, PageKind>();
+  const unique: string[] = [];
+  const seen = new Set<string>();
+  for (const title of titles) {
+    const key = pageKey(title);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    unique.push(key);
+  }
+  for (let i = 0; i < unique.length; i += TITLE_BATCH) {
+    const batch = unique.slice(i, i + TITLE_BATCH);
+    let clcontinue: string | undefined;
+    do {
+      const data = await wikiApi().post(
+        cleanParams({
+          action: "query",
+          titles: batch.join("|"),
+          prop: "info|categories",
+          clcategories: DAB_CATEGORY,
+          cllimit: "max",
+          clcontinue,
+          format: "json",
+          formatversion: "2",
+        }),
+      );
+      assertOk(data);
+      for (const page of pageList(data)) {
+        if (typeof page.title !== "string") continue;
+        const key = pageKey(page.title);
+        const kind = out.get(key) ?? { redirect: false, disambiguation: false };
+        if (page.redirect === true || page.redirect === "")
+          kind.redirect = true;
+        const categories = Array.isArray(page.categories)
+          ? page.categories
+          : [];
+        if (
+          categories.some(
+            (row: { title?: string }) => row?.title === DAB_CATEGORY,
+          )
+        ) {
+          kind.disambiguation = true;
+        }
+        out.set(key, kind);
+      }
+      const normalized = data.query?.normalized;
+      if (Array.isArray(normalized)) {
+        for (const row of normalized) {
+          if (typeof row?.from !== "string" || typeof row?.to !== "string") {
+            continue;
+          }
+          const kind = out.get(pageKey(row.to));
+          if (kind) out.set(pageKey(row.from), kind);
+        }
+      }
+      clcontinue =
+        typeof data.continue?.clcontinue === "string"
+          ? data.continue.clcontinue
+          : undefined;
+    } while (clcontinue);
+  }
+  return out;
 }
 
 export async function hasCategory(

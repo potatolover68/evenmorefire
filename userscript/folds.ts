@@ -38,7 +38,8 @@ export function displaySlots(
     let end = index;
     while (end + 1 < rows.length && isUnchanged(rows[end + 1]!)) end += 1;
     if (end - index < 2) {
-      for (let row = index; row <= end; row++) slots.push({ kind: "line", index: row });
+      for (let row = index; row <= end; row++)
+        slots.push({ kind: "line", index: row });
     } else if (expanded.has(index)) {
       slots.push({ kind: "line", index });
       slots.push({
@@ -105,7 +106,8 @@ export function layoutDisplay(
       slotOfRow[slot.index] = slotIndex;
       return;
     }
-    for (let row = slot.start; row <= slot.end; row++) slotOfRow[row] = slotIndex;
+    for (let row = slot.start; row <= slot.end; row++)
+      slotOfRow[row] = slotIndex;
   });
   return { slots, heights, prefix, slotOfRow };
 }

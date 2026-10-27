@@ -14,10 +14,17 @@ import {
   updateButtons,
   type DialogController,
 } from "./dialog.ts";
-import { matchContrib, mergeHighlights } from "./filters.ts";
+import {
+  defaultFilters,
+  dropCreationKinds,
+  matchContrib,
+  mergeHighlights,
+  type Contrib,
+} from "./filters.ts";
 import {
   fetchAutoTools,
   fetchContributions,
+  pageKinds,
   titlesCreatedBy,
 } from "./mediawiki.ts";
 import { deleteSession, loadSession, saveSession } from "./session.ts";
@@ -47,6 +54,23 @@ export function boot(): void {
     if (!user) return;
     start(user);
   });
+}
+
+async function dropCheckedCreations(
+  matched: readonly Contrib[],
+  config: FilterConfig,
+  report: (text: string, type: string) => void,
+): Promise<Contrib[]> {
+  if (
+    !config.includeCreations ||
+    (!config.excludeDisambiguations && !config.excludeRedirects)
+  ) {
+    return [...matched];
+  }
+  const titles = [...new Set(matched.map((contrib) => contrib.title))];
+  report(`Checking ${titles.length} page creations`, "status");
+  const kinds = await pageKinds(titles);
+  return dropCreationKinds(matched, config, kinds);
 }
 
 function start(user: string): void {
@@ -100,6 +124,9 @@ class App implements DialogController {
   async autoload(): Promise<void> {
     const loaded = await loadSession(this.session.key);
     if (!loaded) return;
+    if (loaded.filters) {
+      loaded.filters = { ...defaultFilters(), ...loaded.filters };
+    }
     this.session = loaded;
     this.persisted = true;
     this.refresh();
@@ -182,14 +209,15 @@ class App implements DialogController {
       const matched = contribs.filter((contrib) =>
         matchContrib(contrib, config, this.tools, created),
       );
+      const selected = await dropCheckedCreations(matched, config, report);
       this.session.highlights = mergeHighlights(
         this.session.highlights,
-        matched.map((contrib) => contrib.revid),
+        selected.map((contrib) => contrib.revid),
       );
       for (const id of Object.keys(this.session.metas)) {
         if (!this.session.highlights[id]) delete this.session.metas[id];
       }
-      for (const contrib of matched) {
+      for (const contrib of selected) {
         this.session.metas[String(contrib.revid)] = {
           title: contrib.title,
           timestamp: contrib.timestamp,
@@ -201,7 +229,7 @@ class App implements DialogController {
       this.session.filters = config;
       await this.persist();
       this.refresh();
-      report(`Marked ${matched.length} revisions`, "info");
+      report(`Marked ${selected.length} revisions`, "info");
     } finally {
       this.busy = false;
       updateButtons(this);

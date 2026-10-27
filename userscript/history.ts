@@ -61,7 +61,8 @@ function ensureBoxes(): HistoryEdit[] {
 function usernameFrom(row: HTMLElement): string {
   const link = row.querySelector("a.mw-userlink");
   const title = link?.getAttribute("title") ?? "";
-  if (title.startsWith("User:")) return title.slice("User:".length).replace(/_/g, " ");
+  if (title.startsWith("User:"))
+    return title.slice("User:".length).replace(/_/g, " ");
   const text = link?.textContent?.replace(/_/g, " ").trim();
   return text || "unknown";
 }
@@ -149,7 +150,9 @@ function openDialog(edits: HistoryEdit[]): void {
   const sync = () => {
     const button = node.querySelector<HTMLInputElement>('input[name="remove"]');
     const reason = readReason(node);
-    const summary = node.querySelector<HTMLInputElement>('input[name="summary"]');
+    const summary = node.querySelector<HTMLInputElement>(
+      'input[name="summary"]',
+    );
     if (button) {
       button.disabled =
         selected.size === 0 || reason === "" || !summary?.value.trim();
@@ -173,7 +176,13 @@ function openDialog(edits: HistoryEdit[]): void {
       if (selected.has(edit.revid)) metas[String(edit.revid)] = edit.timestamp;
     }
     try {
-      await reviewSelection(page, [...selected], metas, { reason, summary }, say);
+      await reviewSelection(
+        page,
+        [...selected],
+        metas,
+        { reason, summary },
+        say,
+      );
     } catch (error) {
       say(error instanceof Error ? error.message : String(error));
     } finally {
@@ -192,8 +201,9 @@ function setUser(edits: readonly HistoryEdit[], checked: boolean): void {
 }
 
 function readReason(form: HTMLFormElement): Exclude<CleanupReason, ""> | "" {
-  const value = form.querySelector<HTMLSelectElement>('select[name="reason"]')
-    ?.value;
+  const value = form.querySelector<HTMLSelectElement>(
+    'select[name="reason"]',
+  )?.value;
   if (value === "AI" || value === "CV" || value === "other") return value;
   return "";
 }

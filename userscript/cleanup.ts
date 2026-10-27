@@ -707,6 +707,7 @@ function stillCurrent(host: CleanupHost, job: PageJob): boolean {
 function restoreOptions(host: CleanupHost): Options {
   return {
     keepBots: host.session.cleanup.keepBots,
+    skipNonProse: host.session.cleanup.skipNonProse,
     onRestoredSection: async (section) =>
       refreshDeprecatedParameters(
         section.text,
@@ -755,6 +756,7 @@ async function scrubPage(
     new Set(job.taintedRevids),
     revertRevids(metas),
     host.session.cleanup.keepBots,
+    host.session.cleanup.skipNonProse,
   );
   if (rollback && (rollback.emptied || rollback.keptRevid != null)) {
     let content = rollback.content;
@@ -783,7 +785,11 @@ async function scrubPage(
   const tainted = new Set(
     job.taintedRevids.filter((id) => metas.some((rev) => rev.revid === id)),
   );
-  const folder = openAnalysis(tainted, DEFAULT_OPTIONS.restoreAnchorWindow);
+  const folder = openAnalysis(
+    tainted,
+    DEFAULT_OPTIONS.restoreAnchorWindow,
+    host.session.cleanup.skipNonProse,
+  );
   const tracker = createRevertTracker();
   let seen = 0;
   let aborted = false;
