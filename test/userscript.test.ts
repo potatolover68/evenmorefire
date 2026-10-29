@@ -225,7 +225,7 @@ describe("comment labels", () => {
     ).toBe(
       "Updated zombie parameters of {{Infobox person}} (first_name → fname1) from 2020-01-01T00:20:00Z using revision 3",
     );
-    expect(Object.keys(ACTION_LABELS)).toHaveLength(20);
+    expect(Object.keys(ACTION_LABELS)).toHaveLength(21);
   });
 });
 

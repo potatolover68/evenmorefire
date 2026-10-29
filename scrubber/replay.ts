@@ -86,7 +86,9 @@ export function trivialRollback(
   reverts: ReadonlySet<number>,
   keepBots = false,
   skipNonProse = false,
+  avoidOrphans = false,
 ): TrivialRollback | null {
+  if (avoidOrphans) return null;
   const undone: number[] = [];
   let kept: Revision | null = null;
   for (let i = revisions.length - 1; i >= 0; i--) {

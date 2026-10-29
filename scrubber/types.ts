@@ -17,6 +17,7 @@ export type Action =
   | "remove-empty-section"
   | "flag-empty-section"
   | "flag-fragment"
+  | "remove-fragment"
   | "all-tainted"
   | "warn-unknown-revid"
   | "warn-tainted-hidden";
@@ -89,6 +90,11 @@ export interface Options {
    * removed.
    */
   skipNonProse?: boolean;
+  /**
+   * Delete a sentence fragment left behind after the rest of its sentence
+   * was removed.
+   */
+  avoidOrphans?: boolean;
   /**
    * When set, `cleanTaintedHistory` returns a promise and runs this on each
    * restored section after orphan rescue.

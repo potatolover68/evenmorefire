@@ -100,6 +100,7 @@ function cleanLoadedHistory(
     reverts,
     options?.keepBots === true,
     options?.skipNonProse === true,
+    options?.avoidOrphans === true,
   );
   if (rollback && (rollback.emptied || rollback.content != null)) {
     return scrubRollback(
@@ -261,6 +262,7 @@ export function scrubAnalysis(
       finalNorm,
       droppedFinalIds,
       analysis.finalTokens,
+      options?.avoidOrphans === true,
     );
     leading = spaced.leading;
     items = spaced.items;

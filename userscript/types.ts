@@ -55,6 +55,8 @@ export interface CleanupConfig {
   keepBots: boolean;
   /** Keep tables, infoboxes, categories, references, files, and short descriptions. */
   skipNonProse: boolean;
+  /** Delete a clause left behind after the rest of its sentence was removed. */
+  avoidOrphans: boolean;
 }
 
 export interface RevisionMeta {
@@ -112,6 +114,7 @@ export function defaultCleanup(): CleanupConfig {
     aiTagPercent: null,
     keepBots: false,
     skipNonProse: false,
+    avoidOrphans: false,
   };
 }
 
@@ -204,5 +207,6 @@ function normalizeCleanup(config: CleanupConfig): CleanupConfig {
     aiTagPercent: config.aiTagPercent ?? null,
     keepBots: config.keepBots === true,
     skipNonProse: config.skipNonProse === true,
+    avoidOrphans: config.avoidOrphans === true,
   };
 }

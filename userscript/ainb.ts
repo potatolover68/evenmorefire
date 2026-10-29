@@ -9,6 +9,7 @@ export interface CaseSettings {
   reason: CleanupReason;
   keepBots: boolean;
   skipNonProse: boolean;
+  avoidOrphans: boolean;
 }
 
 export function bootAinb(): void {
@@ -76,6 +77,7 @@ async function openCase(button: HTMLButtonElement): Promise<void> {
     reason: saved?.reason ?? "",
     keepBots: saved?.keepBots === true,
     skipNonProse: saved?.skipNonProse === true,
+    avoidOrphans: saved?.avoidOrphans === true,
   };
   openDialog(article, diffs, settings);
 }
@@ -154,6 +156,17 @@ function openDialog(
       },
     ],
   });
+  form.append({
+    type: "checkbox",
+    list: [
+      {
+        name: "avoidOrphans",
+        value: "yes",
+        label: "Avoid orphaned fragments",
+        checked: settings.avoidOrphans,
+      },
+    ],
+  });
   if (diffs.length === 0) {
     form.append({
       type: "div",
@@ -198,6 +211,7 @@ function openDialog(
     reason: readReason(node),
     keepBots: checked(node, "keepBots"),
     skipNonProse: checked(node, "skipNonProse"),
+    avoidOrphans: checked(node, "avoidOrphans"),
   });
   const selectedIds = () => diffs.filter((id) => checked(node, `rev-${id}`));
   const sync = () => {
@@ -258,6 +272,7 @@ async function proceed(
         summary: settings.summary,
         keepBots: settings.keepBots,
         skipNonProse: settings.skipNonProse,
+        avoidOrphans: settings.avoidOrphans,
         trackingPage: casePage(),
         rowActions: true,
         markUnchanged: true,

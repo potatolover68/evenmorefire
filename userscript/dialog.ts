@@ -397,6 +397,19 @@ function appendCleanup(
   });
   form.append({
     type: "checkbox",
+    list: [
+      {
+        name: "avoidOrphans",
+        value: "yes",
+        label: "Avoid orphaned fragments",
+        checked: cleanup.avoidOrphans,
+        tooltip:
+          "Delete a sentence fragment, such as a which-clause, when the rest of its sentence was removed.",
+      },
+    ],
+  });
+  form.append({
+    type: "checkbox",
     adminonly: true,
     list: [
       {
@@ -647,6 +660,7 @@ function readCleanup(form: HTMLFormElement): {
       revdel: box(form, "revdel"),
       keepBots: box(form, "keepBots"),
       skipNonProse: box(form, "skipNonProse"),
+      avoidOrphans: box(form, "avoidOrphans"),
       trackingPage: text(form, "tracking"),
       summary: text(form, "summary"),
       reason,

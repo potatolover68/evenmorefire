@@ -18,6 +18,7 @@ export const ACTION_LABELS: Record<Action | "deprecated-param", string> = {
   "flag-empty-section":
     "Flagged an empty section that still has a clean heading",
   "flag-fragment": "Flagged a fragment left behind",
+  "remove-fragment": "Removed a sentence fragment left behind",
   "all-tainted": "The whole page is tainted",
   "warn-unknown-revid": "A requested revision was not in the history",
   "warn-tainted-hidden": "A tainted revision is hidden and was skipped",

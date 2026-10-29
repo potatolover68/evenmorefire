@@ -188,6 +188,7 @@ export async function reviewSelection(
     summary: string;
     keepBots?: boolean;
     skipNonProse?: boolean;
+    avoidOrphans?: boolean;
     trackingPage?: string;
     rowActions?: boolean;
     /** When the scrub changes nothing, mark the AIC row unnecessary. */
@@ -202,6 +203,7 @@ export async function reviewSelection(
     summary: cleanup.summary,
     keepBots: cleanup.keepBots === true,
     skipNonProse: cleanup.skipNonProse === true,
+    avoidOrphans: cleanup.avoidOrphans === true,
     trackingPage: cleanup.trackingPage ?? "",
   };
   const ids = [...revids].sort((a, b) => a - b);
@@ -763,6 +765,7 @@ function restoreOptions(host: CleanupHost): Options {
   return {
     keepBots: host.session.cleanup.keepBots,
     skipNonProse: host.session.cleanup.skipNonProse,
+    avoidOrphans: host.session.cleanup.avoidOrphans,
     onRestoredSection: async (section) =>
       refreshDeprecatedParameters(
         section.text,
@@ -812,6 +815,7 @@ async function scrubPage(
     revertRevids(metas),
     host.session.cleanup.keepBots,
     host.session.cleanup.skipNonProse,
+    host.session.cleanup.avoidOrphans,
   );
   if (rollback && (rollback.emptied || rollback.keptRevid != null)) {
     let content = rollback.content;
