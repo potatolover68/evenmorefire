@@ -6,6 +6,7 @@ export function markArticleCompleted(
   wikitext: string,
   title: string,
   status: RowStatus = "completed",
+  force = false,
 ): string | null {
   const wanted = plainTitle(title);
   const spans = findTemplates(wikitext).filter(
@@ -15,7 +16,7 @@ export function markArticleCompleted(
   let changed = false;
   for (const span of [...spans].reverse()) {
     const body = out.slice(span.start, span.end);
-    const next = rewriteRow(body, wanted, status);
+    const next = rewriteRow(body, wanted, status, force);
     if (next == null || next === body) continue;
     out = out.slice(0, span.start) + next + out.slice(span.end);
     changed = true;
@@ -27,6 +28,7 @@ function rewriteRow(
   body: string,
   wanted: string,
   status: RowStatus,
+  force: boolean,
 ): string | null {
   if (!body.startsWith("{{") || !body.endsWith("}}")) return null;
   const inner = body.slice(2, -2);
@@ -43,7 +45,8 @@ function rewriteRow(
     (param) => param.key === "status" || param.key === "2",
   );
   if (named >= 0) {
-    if (statusRank(parsed[named]!.value) >= statusRank(status)) return body;
+    if (!force && statusRank(parsed[named]!.value) >= statusRank(status))
+      return body;
     const nextParams = params.slice();
     nextParams[named] = replaceNamed(params[named] ?? "", status);
     return wrap(name, nextParams);
@@ -53,7 +56,8 @@ function rewriteRow(
     .filter((entry) => entry.param.key == null);
   const slot = positional[1];
   if (slot) {
-    if (statusRank(slot.param.value) >= statusRank(status)) return body;
+    if (!force && statusRank(slot.param.value) >= statusRank(status))
+      return body;
     const nextParams = params.slice();
     nextParams[slot.index] = replacePositional(
       params[slot.index] ?? "",

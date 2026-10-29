@@ -22,5 +22,13 @@ createApp(ReviewApp, {
       state.statusText = "Undone.";
       state.done = true;
     },
+    rejectUnnecessary: async () => {
+      state.statusText = "Marked unnecessary.";
+      state.done = true;
+    },
+    rejectTagged: async () => {
+      state.statusText = "Marked tagged.";
+      state.done = true;
+    },
   },
 }).mount("#app");

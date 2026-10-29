@@ -14,6 +14,19 @@ export const PAGE_CSS = `
 .emf-namespaces div, .emf-creations > div { display: inline-block; margin-right: 0.75em; }
 .emf-queue-stats { white-space: pre-line; line-height: 1.45; }
 .emf-error { color: #ff4500; font-weight: bold; }
+.emf-ainb-btn {
+	cursor: pointer;
+	background: #f8f9fa;
+	border: 1px solid #ccc;
+	border-radius: 3px;
+	padding: 2px 6px;
+	font-size: 14px;
+	line-height: 1;
+}
+.ainb-action-cell {
+  display: flex;
+  flex-direction: row;
+}
 body.emf-focus .mw-contributions-list input[type="checkbox"],
 body.emf-focus .emf-tick { visibility: hidden; }
 body.emf-focus li[data-mw-revid]:not(.emf-selected),

@@ -54,6 +54,8 @@ export interface CleanupHost {
   persist(): Promise<void>;
   refresh(): void;
   progress: string;
+  /** Contributions and AINB reviews can close the AIC row. History cannot. */
+  rowActions?: boolean;
 }
 
 let trackingChain: Promise<void> = Promise.resolve();
@@ -181,14 +183,26 @@ export async function reviewSelection(
   title: string,
   revids: number[],
   metas: Record<string, string>,
-  cleanup: { reason: Exclude<CleanupReason, "">; summary: string },
+  cleanup: {
+    reason: Exclude<CleanupReason, "">;
+    summary: string;
+    keepBots?: boolean;
+    skipNonProse?: boolean;
+    trackingPage?: string;
+    rowActions?: boolean;
+    /** When the scrub changes nothing, mark the AIC row unnecessary. */
+    markUnchanged?: boolean;
+  },
   report: (text: string) => void,
 ): Promise<void> {
-  const session = emptySession("history");
+  const session = emptySession(cleanup.rowActions ? "ainb" : "history");
   session.cleanup = {
     ...defaultCleanup(),
     reason: cleanup.reason,
     summary: cleanup.summary,
+    keepBots: cleanup.keepBots === true,
+    skipNonProse: cleanup.skipNonProse === true,
+    trackingPage: cleanup.trackingPage ?? "",
   };
   const ids = [...revids].sort((a, b) => a - b);
   for (const revid of ids) {
@@ -226,10 +240,14 @@ export async function reviewSelection(
     refresh() {
       report(job.status === "processing" ? "Reading history…" : job.status);
     },
+    rowActions: cleanup.rowActions === true,
   };
   await processJob(host, job);
   if (job.status === "skipped") {
-    report("Nothing to remove.");
+    if (cleanup.markUnchanged) {
+      await updateTracking(host, title, cleanup.reason, "unnecessary", true);
+      report("Nothing to remove. Marked unnecessary.");
+    } else report("Nothing to remove.");
     return;
   }
   await openJob(host, title);
@@ -254,11 +272,25 @@ export async function openJob(host: CleanupHost, title: string): Promise<void> {
     status: job.status,
     origin: location.origin,
     revdel: host.session.cleanup.revdel,
+    rowActions: host.rowActions === true,
     onApply: async (content) => {
       await commitEdit(host, job, content, host.session.cleanup.revdel);
     },
     onReject: async () => {
       job.status = "skipped";
+      await host.persist();
+      host.refresh();
+    },
+    onRejectUnnecessary: async () => {
+      job.status = "skipped";
+      await updateTracking(host, job.title, reason, "unnecessary", true);
+      await host.persist();
+      host.refresh();
+    },
+    onRejectTagged: async () => {
+      await ensureAiTag(host, job.title, reason);
+      job.status = "skipped";
+      await updateTracking(host, job.title, reason, "tagged", true);
       await host.persist();
       host.refresh();
     },
@@ -610,13 +642,14 @@ async function updateTracking(
   title: string,
   reason: CleanupReason,
   status: RowStatus = "completed",
+  force = false,
 ): Promise<void> {
   const page = host.session.cleanup.trackingPage.trim();
   if (!page) return;
   const run = async () => {
     for (let attempt = 0; attempt < 2; attempt++) {
       const current = await readPage(page);
-      const next = markArticleCompleted(current.text, title, status);
+      const next = markArticleCompleted(current.text, title, status, force);
       if (next == null) return;
       try {
         await savePage(
@@ -633,6 +666,28 @@ async function updateTracking(
   };
   trackingChain = trackingChain.then(run, run);
   await trackingChain;
+}
+
+async function ensureAiTag(
+  host: CleanupHost,
+  title: string,
+  reason: Exclude<CleanupReason, "">,
+): Promise<void> {
+  if (await hasCategory(title, AI_CATEGORY)) return;
+  const latest = await latestRevision(title);
+  let banner = aiTagTemplate(host.session.cleanup.summary);
+  try {
+    const expanded = await expandWikitext(title, banner);
+    if (expanded.trim()) banner = expanded;
+  } catch {
+    // Keep the unsubstituted tag. The article text is still appended below.
+  }
+  await savePage(
+    title,
+    `${banner.trim()}\n${latest.content}`,
+    editSummary(reason, host.session.cleanup.summary),
+    latest.revid,
+  );
 }
 
 function yieldJob(host: CleanupHost, job: PageJob): Promise<boolean> {

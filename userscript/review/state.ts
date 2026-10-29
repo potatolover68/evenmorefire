@@ -6,6 +6,8 @@ export interface ReviewActions {
   apply: (content: string) => Promise<void>;
   reject: () => Promise<void>;
   undo: () => Promise<void>;
+  rejectUnnecessary: () => Promise<void>;
+  rejectTagged: () => Promise<void>;
 }
 
 export interface ReviewState {
@@ -25,4 +27,5 @@ export interface ReviewState {
   draft: string;
   done: boolean;
   failed: string;
+  rowActions: boolean;
 }

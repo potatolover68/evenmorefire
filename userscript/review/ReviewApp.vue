@@ -429,6 +429,22 @@ onUnmounted(() => observer?.disconnect());
         >
           Reject
         </button>
+        <button
+          v-if="state.rowActions"
+          type="button"
+          :disabled="state.done"
+          @click="run(actions.rejectUnnecessary, 'Marked unnecessary.')"
+        >
+          Reject as unnecessary
+        </button>
+        <button
+          v-if="state.rowActions"
+          type="button"
+          :disabled="state.done"
+          @click="run(actions.rejectTagged, 'Marked tagged.')"
+        >
+          Reject as tagged
+        </button>
       </template>
       <button
         v-if="state.status === 'applied'"

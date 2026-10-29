@@ -20,6 +20,10 @@ export interface ReviewRequest {
   onApply: (content: string) => Promise<void>;
   onReject: () => Promise<void>;
   onUndo: () => Promise<void>;
+  /** Contributions and AINB reviews. History reviews omit these. */
+  rowActions?: boolean;
+  onRejectUnnecessary?: () => Promise<void>;
+  onRejectTagged?: () => Promise<void>;
   /** Diff prepared while the page was processed. */
   rows?: readonly AlignedRow[];
 }
@@ -80,6 +84,8 @@ export function openReview(request: ReviewRequest): ReviewHandle {
       apply: request.onApply,
       reject: request.onReject,
       undo: request.onUndo,
+      rejectUnnecessary: request.onRejectUnnecessary ?? noop,
+      rejectTagged: request.onRejectTagged ?? noop,
     };
     const app = createApp(ReviewApp, { state, actions });
     app.mount(popup.document.body);
@@ -94,6 +100,8 @@ export function openReview(request: ReviewRequest): ReviewHandle {
   live.actions.apply = request.onApply;
   live.actions.reject = request.onReject;
   live.actions.undo = request.onUndo;
+  live.actions.rejectUnnecessary = request.onRejectUnnecessary ?? noop;
+  live.actions.rejectTagged = request.onRejectTagged ?? noop;
   return handleFor(popup, live.state, request, gen);
 }
 
@@ -119,6 +127,7 @@ function makeState(request: ReviewRequest): ReviewState {
     draft: "",
     done: false,
     failed: "",
+    rowActions: false,
   });
   fillState(state, request);
   return state;
@@ -145,6 +154,7 @@ function fillState(state: ReviewState, request: ReviewRequest): void {
   state.editing = false;
   state.done = false;
   state.failed = "";
+  state.rowActions = request.rowActions === true;
   state.draft = request.proposal;
   if (request.revdel && request.status === "applied") {
     state.warnings.push("Undo does not restore revision-deleted text.");
@@ -208,6 +218,8 @@ function handleFor(
 function pushWarning(state: ReviewState, text: string): void {
   if (!state.warnings.includes(text)) state.warnings.push(text);
 }
+
+async function noop(): Promise<void> {}
 
 function escapeHtml(text: string): string {
   return text

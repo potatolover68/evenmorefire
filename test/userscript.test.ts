@@ -178,6 +178,9 @@ describe("AIC rows", () => {
       "status=tagged",
     );
     expect(markArticleCompleted(source, "Done", "tagged")).toBeNull();
+    expect(markArticleCompleted(source, "Done", "tagged", true)).toContain(
+      "status=tagged",
+    );
     expect(markArticleCompleted(source, "Example", "completed")).toContain(
       "status=completed",
     );

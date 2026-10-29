@@ -86,6 +86,21 @@ export async function loadJobContent(
   return loadBodyFrom(idbDepot(), sessionKey, title);
 }
 
+export async function saveRecord(key: string, value: unknown): Promise<void> {
+  const db = await openDb();
+  await requestDone(
+    db.transaction(STORE, "readwrite").objectStore(STORE).put(value, key),
+  );
+}
+
+export async function loadRecord<T>(key: string): Promise<T | null> {
+  const db = await openDb();
+  const value = await requestResult<T | undefined>(
+    db.transaction(STORE).objectStore(STORE).get(key),
+  );
+  return value ?? null;
+}
+
 export async function loadSession(key: string): Promise<Session | null> {
   return loadSessionFrom(idbDepot(), key);
 }

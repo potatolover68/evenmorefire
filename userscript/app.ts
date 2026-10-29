@@ -1,4 +1,5 @@
 import { fetchAllowlist, isAllowlisted } from "./allowlist.ts";
+import { bootAinb } from "./ainb.ts";
 import { openJob, runQueue, syncJobs, type CleanupHost } from "./cleanup.ts";
 import { bootHistory } from "./history.ts";
 import {
@@ -43,16 +44,19 @@ export function boot(): void {
   if (typeof viewer !== "string" || !viewer) return;
   const special = mw.config.get("wgCanonicalSpecialPageName");
   const action = mw.config.get("wgAction");
-  if (special !== "Contributions" && action !== "history") return;
   void fetchAllowlist().then((names) => {
     if (!isAllowlisted(viewer, names)) return;
     if (action === "history") {
       bootHistory();
       return;
     }
-    const user = targetUser();
-    if (!user) return;
-    start(user);
+    if (special === "Contributions") {
+      const user = targetUser();
+      if (!user) return;
+      start(user);
+      return;
+    }
+    bootAinb();
   });
 }
 
@@ -339,6 +343,7 @@ class App implements DialogController {
       get running() {
         return app.running;
       },
+      rowActions: true,
       setRunning: (running) => {
         app.running = running;
       },

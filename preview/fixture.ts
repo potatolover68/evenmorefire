@@ -66,5 +66,6 @@ export function fixtureState(): ReviewState {
     draft: proposal,
     done: false,
     failed: "",
+    rowActions: false,
   };
 }
