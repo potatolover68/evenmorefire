@@ -83,4 +83,22 @@ describe("skip non-prose edits", () => {
     expect(content).not.toContain("Gone");
     expect(content).not.toContain("Listed");
   });
+
+  it("does not leave a quote stranded in front of a kept reference", () => {
+    const before = "Alpha.";
+    const after =
+      "Alpha. Researchers objected.'<ref>{{cite news\n|title=Fight\n|url=https://example.com\n}}</ref>";
+    const content = scrub(
+      [
+        { revid: 1, content: before },
+        { revid: 2, content: after },
+      ],
+      [2],
+    );
+    expect(content).toContain("<ref>{{cite news");
+    expect(content).toContain("|url=https://example.com");
+    expect(content).toContain("}}</ref>");
+    expect(content).not.toContain("objected");
+    expect(content).not.toMatch(/'<ref/);
+  });
 });

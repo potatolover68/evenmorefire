@@ -60,4 +60,27 @@ describe("unchanged folds", () => {
     expect(across.top).toBe(0);
     expect(across.height).toBe((layout.prefix[3] ?? 0) - 0);
   });
+
+  it("does not hide the middle of a multi-line citation", () => {
+    const citation = [
+      row("Alpha."),
+      row("Beta."),
+      row("Gamma."),
+      row("Delta."),
+      row("<ref>{{cite news"),
+      row("|title=Google AI Researchers Lay Out Demands"),
+      row("|url=https://example.com"),
+      row("|date=2020-12-16"),
+      row("|access-date=2025-08-01"),
+      row("}}</ref>"),
+      row("Omega."),
+    ];
+    const slots = displaySlots(citation, new Set());
+    const shown = slots
+      .filter((slot) => slot.kind === "line")
+      .map((slot) => citation[slot.index]!.before);
+    expect(shown).toContain("|url=https://example.com");
+    expect(shown).toContain("|date=2020-12-16");
+    expect(shown).toContain("}}</ref>");
+  });
 });

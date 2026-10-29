@@ -22,21 +22,28 @@ export interface DisplayFold {
 
 export type DisplaySlot = DisplayLine | DisplayFold;
 
-/** Unchanged runs longer than two rows. Shorter runs stay fully visible. */
+/** Unchanged runs longer than two rows. Shorter runs stay fully visible. Lines inside a multi-line reference or citation stay visible so the citation is not cut in half. */
 export function displaySlots(
   rows: readonly AlignedRow[],
   expanded: ReadonlySet<number>,
 ): DisplaySlot[] {
+  const pinned = citationRows(rows);
   const slots: DisplaySlot[] = [];
   let index = 0;
   while (index < rows.length) {
-    if (!isUnchanged(rows[index]!)) {
+    if (!isUnchanged(rows[index]!) || pinned[index]) {
       slots.push({ kind: "line", index });
       index += 1;
       continue;
     }
     let end = index;
-    while (end + 1 < rows.length && isUnchanged(rows[end + 1]!)) end += 1;
+    while (
+      end + 1 < rows.length &&
+      isUnchanged(rows[end + 1]!) &&
+      !pinned[end + 1]
+    ) {
+      end += 1;
+    }
     if (end - index < 2) {
       for (let row = index; row <= end; row++)
         slots.push({ kind: "line", index: row });
@@ -66,6 +73,54 @@ export function displaySlots(
     index = end + 1;
   }
   return slots;
+}
+
+/** A line that continues a reference or citation from the previous line. */
+function citationRows(rows: readonly AlignedRow[]): boolean[] {
+  let ref = 0;
+  let cite = 0;
+  return rows.map((row) => {
+    const text = row.after ?? row.before ?? "";
+    const open = ref > 0 || cite > 0;
+    const next = stepCitation(text, ref, cite);
+    ref = next.ref;
+    cite = next.cite;
+    return open || ref > 0 || cite > 0;
+  });
+}
+
+function stepCitation(
+  text: string,
+  ref: number,
+  cite: number,
+): { ref: number; cite: number } {
+  let i = 0;
+  while (i < text.length) {
+    const refClose = /^<\/ref\s*>/i.exec(text.slice(i));
+    if (refClose) {
+      ref = Math.max(0, ref - 1);
+      i += refClose[0].length;
+      continue;
+    }
+    const refOpen = /^<ref\b[^>]*>/i.exec(text.slice(i));
+    if (refOpen) {
+      if (!refOpen[0].endsWith("/>")) ref += 1;
+      i += refOpen[0].length;
+      continue;
+    }
+    if (cite > 0 && text.startsWith("}}", i)) {
+      cite -= 1;
+      i += 2;
+      continue;
+    }
+    if (/^\{\{\s*cite\b/i.test(text.slice(i))) {
+      cite += 1;
+      i += 2;
+      continue;
+    }
+    i += 1;
+  }
+  return { ref, cite };
 }
 
 export function foldLabel(slot: DisplayFold): string {
