@@ -15,7 +15,7 @@ function wrapVueLoader(): Plugin {
       for (const item of Object.values(bundle)) {
         if (item.type !== "chunk" || !item.fileName.endsWith(".js")) continue;
         const banner = header.endsWith("\n") ? header : `${header}\n`;
-        item.code = `${banner}mw.loader.using(["vue"],function(require){var Vue=require("vue");\n${item.code}\n});\n`;
+        item.code = `${banner}mw.loader.using(["vue","ext.gadget.morebits"],function(require){var Vue=require("vue");\n${item.code}\n});\n`;
       }
     },
   };
