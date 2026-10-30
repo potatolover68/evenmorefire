@@ -8,15 +8,6 @@ export function templateSpans(text: string): Array<[number, number]> {
   return scanSpans(text, true);
 }
 
-/** True when the template regions of two texts are not the same strings. */
-export function templateChanged(before: string, after: string): boolean {
-  const left = templateSpans(before).map(([start, end]) => before.slice(start, end));
-  const right = templateSpans(after).map(([start, end]) => after.slice(start, end));
-  if (left.length !== right.length) return true;
-  for (let i = 0; i < left.length; i++) if (left[i] !== right[i]) return true;
-  return false;
-}
-
 function scanSpans(
   text: string,
   templatesOnly: boolean,

@@ -101,7 +101,6 @@ function cleanLoadedHistory(
     options?.keepBots === true,
     options?.skipNonProse === true,
     options?.avoidOrphans === true,
-    options?.untaintedTemplates !== false,
   );
   if (rollback && (rollback.emptied || rollback.content != null)) {
     return scrubRollback(

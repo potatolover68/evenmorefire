@@ -1,4 +1,4 @@
-import { nonProseChanged, templateChanged } from "./nonprose";
+import { nonProseChanged } from "./nonprose";
 import type { Revision, Token } from "./types";
 import { REVERT_LOOKBACK } from "./types";
 import { normalizeNewlines } from "./split";
@@ -77,6 +77,10 @@ export interface TrivialRollback {
  * run is skipped, so reFill or IABot does not hide an older tainted edit.
  * A bot edit underneath the run is kept. `keepBots` refuses a wholesale
  * rollback that would discard any bot edit, and the token scrub keeps it.
+ * A template rewrite inside the run does not refuse the rollback: the
+ * parent text is restored, templates included. `skipNonProse` still refuses
+ * it when a tainted revision changes non-prose, so the token scrub can keep
+ * that text. `avoidOrphans` refuses it too.
  * Returns null when an older tainted edit still needs the full scrub, or a
  * hidden revision sits in the run.
  */
@@ -87,7 +91,6 @@ export function trivialRollback(
   keepBots = false,
   skipNonProse = false,
   avoidOrphans = false,
-  untaintedTemplates = false,
 ): TrivialRollback | null {
   if (avoidOrphans) return null;
   const undone: number[] = [];
@@ -114,8 +117,6 @@ export function trivialRollback(
       break;
     }
     if (skipNonProse && revisionTouchesNonProse(revisions, i)) return null;
-    if (untaintedTemplates && revisionTouchesTemplate(revisions, i))
-      return null;
     undone.push(revision.revid);
   }
   if (undone.length === 0) return null;
@@ -143,19 +144,6 @@ function revisionTouchesNonProse(
   if (text == null) return true;
   const parent = index > 0 ? revisions[index - 1]?.content : null;
   return nonProseChanged(
-    parent == null ? "" : normalizeNewlines(parent),
-    normalizeNewlines(text),
-  );
-}
-
-function revisionTouchesTemplate(
-  revisions: readonly Revision[],
-  index: number,
-): boolean {
-  const text = revisions[index]?.content;
-  if (text == null) return true;
-  const parent = index > 0 ? revisions[index - 1]?.content : null;
-  return templateChanged(
     parent == null ? "" : normalizeNewlines(parent),
     normalizeNewlines(text),
   );

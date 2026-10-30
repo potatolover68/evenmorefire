@@ -91,8 +91,9 @@ export interface Options {
    */
   skipNonProse?: boolean;
   /**
-   * Leave every `{{...}}` as it stands in the latest revision. A tainted
-   * edit cannot remove, rewrite, or duplicate a template.
+   * Leave every `{{...}}` as it stands in the latest revision when the
+   * token scrub runs. A trailing rollback still restores the parent text,
+   * templates included. Skip non-prose still blocks that rollback.
    */
   untaintedTemplates?: boolean;
   /**

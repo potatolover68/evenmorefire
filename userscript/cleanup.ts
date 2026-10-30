@@ -819,7 +819,6 @@ async function scrubPage(
     host.session.cleanup.keepBots,
     host.session.cleanup.skipNonProse,
     host.session.cleanup.avoidOrphans,
-    host.session.cleanup.untaintedTemplates !== false,
   );
   if (rollback && (rollback.emptied || rollback.keptRevid != null)) {
     let content = rollback.content;
