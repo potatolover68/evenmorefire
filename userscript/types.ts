@@ -57,6 +57,8 @@ export interface CleanupConfig {
   skipNonProse: boolean;
   /** Delete a clause left behind after the rest of its sentence was removed. */
   avoidOrphans: boolean;
+  /** Leave templates as they stand in the latest revision. */
+  untaintedTemplates: boolean;
 }
 
 export interface RevisionMeta {
@@ -115,6 +117,7 @@ export function defaultCleanup(): CleanupConfig {
     keepBots: false,
     skipNonProse: false,
     avoidOrphans: false,
+    untaintedTemplates: true,
   };
 }
 
@@ -208,5 +211,6 @@ function normalizeCleanup(config: CleanupConfig): CleanupConfig {
     keepBots: config.keepBots === true,
     skipNonProse: config.skipNonProse === true,
     avoidOrphans: config.avoidOrphans === true,
+    untaintedTemplates: config.untaintedTemplates !== false,
   };
 }

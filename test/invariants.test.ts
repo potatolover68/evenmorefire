@@ -305,6 +305,7 @@ describe("invariants", () => {
         { revid: 2, content: after },
       ],
       [1],
+      { untaintedTemplates: false },
     );
     expect(result.content).not.toContain("Rafael");
     expect(result.content).not.toContain("trans-title");

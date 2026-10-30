@@ -16,7 +16,7 @@ import {
   type SplitSentence,
 } from "./split";
 import { scanTokens } from "./wikiscan";
-import { insideSpan, nonProseSpans } from "./nonprose";
+import { insideSpan, nonProseSpans, templateSpans } from "./nonprose";
 import type {
   Hunk,
   ParagraphObj,
@@ -68,6 +68,7 @@ export function openAnalysis(
   tainted: ReadonlySet<number>,
   anchorWindow: number,
   skipNonProse = false,
+  untaintedTemplates = false,
 ): AnalysisFolder {
   const paragraphsByKey = new Map<string, ParagraphObj[]>();
   const sentencesByKey = new Map<string, SentenceObj[]>();
@@ -110,13 +111,17 @@ export function openAnalysis(
   const regionOf = new WeakMap<ParagraphObj, { key: string; after: string }>();
 
   let activeSpans: Array<[number, number]> | null = null;
+  let templateRanges: Array<[number, number]> | null = null;
   const structuralAt = (start: number, end: number) =>
     activeSpans != null && insideSpan(activeSpans, start, end);
+  const templateAt = (start: number, end: number) =>
+    templateRanges != null && insideSpan(templateRanges, start, end);
 
   const createToken = (
     value: string,
     origin: number,
     structural = false,
+    inTemplate = false,
   ): Token => {
     const token: Token = {
       id: nextId++,
@@ -126,6 +131,7 @@ export function openAnalysis(
       lastSeenRev: origin,
       claimedGen: gen,
       structural: structural || undefined,
+      inTemplate: inTemplate || undefined,
     };
     tokensById.set(token.id, token);
     return token;
@@ -191,6 +197,7 @@ export function openAnalysis(
               currTokens[local]!.value,
               revid,
               currTokens[local]!.structural === true,
+              currTokens[local]!.inTemplate === true,
             );
             placedRow[local] = created;
             inserted?.push(created.id);
@@ -208,6 +215,7 @@ export function openAnalysis(
             currTokens[k]!.value,
             revid,
             currTokens[k]!.structural === true,
+            currTokens[k]!.inTemplate === true,
           );
           placedRow[k] = created;
           inserted?.push(created.id);
@@ -226,6 +234,7 @@ export function openAnalysis(
         value: token.value,
         gapAfter: token.gapAfter,
         structural: structuralAt(token.start, token.end),
+        inTemplate: templateAt(token.start, token.end),
       })),
     );
     const alignment = alignSentences(
@@ -254,6 +263,7 @@ export function openAnalysis(
           currTokens[k]!.value,
           revid,
           currTokens[k]!.structural === true,
+          currTokens[k]!.inTemplate === true,
         );
       }
     }
@@ -399,6 +409,7 @@ export function openAnalysis(
     gen++;
     const text = normalizeNewlines(revision.content);
     activeSpans = skipNonProse ? nonProseSpans(text) : null;
+    templateRanges = untaintedTemplates ? templateSpans(text) : null;
     currentRevid = revision.revid;
     prevGapById = prev ? gapMap(prev.paragraphs, gapsOf) : new Map();
     if (prev && tryPositional(text, revision.revid)) return;
@@ -562,6 +573,7 @@ export function openAnalysis(
           value: token.value,
           gapAfter: token.gapAfter,
           structural: structuralAt(token.start, token.end),
+        inTemplate: templateAt(token.start, token.end),
         })),
       );
       const alignment = alignSentences(
@@ -587,6 +599,7 @@ export function openAnalysis(
             currTokens[k]!.value,
             revision.revid,
             currTokens[k]!.structural === true,
+            currTokens[k]!.inTemplate === true,
           );
           placed[index]![k] = token;
           insertedIds[index]!.push(token.id);
@@ -796,8 +809,14 @@ export function analyze(
   tainted: ReadonlySet<number>,
   anchorWindow: number,
   skipNonProse = false,
+  untaintedTemplates = false,
 ): Analysis {
-  const folder = openAnalysis(tainted, anchorWindow, skipNonProse);
+  const folder = openAnalysis(
+    tainted,
+    anchorWindow,
+    skipNonProse,
+    untaintedTemplates,
+  );
   for (const revision of revisions) folder.push(revision);
   return folder.finish();
 }

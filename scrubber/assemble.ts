@@ -182,7 +182,10 @@ export function assemble(
 
   for (const hunk of analysis.hunks) {
     const restoring = hunk.deleted.filter(
-      (token) => isPresent(token, tainted, reverts) && !byToken.has(token.id),
+      (token) =>
+        isPresent(token, tainted, reverts) &&
+        !byToken.has(token.id) &&
+        !token.inTemplate,
     );
     if (restoring.length === 0) continue;
     if (disposition(hunk, finalIds, tainted) === "supersede") {

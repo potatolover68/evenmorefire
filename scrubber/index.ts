@@ -101,6 +101,7 @@ function cleanLoadedHistory(
     options?.keepBots === true,
     options?.skipNonProse === true,
     options?.avoidOrphans === true,
+    options?.untaintedTemplates !== false,
   );
   if (rollback && (rollback.emptied || rollback.content != null)) {
     return scrubRollback(
@@ -117,6 +118,7 @@ function cleanLoadedHistory(
     tainted,
     opts.restoreAnchorWindow,
     options?.skipNonProse === true,
+    options?.untaintedTemplates !== false,
   );
   return scrubAnalysis(revisions, taintedRevids, analysis, reverts, options);
 }

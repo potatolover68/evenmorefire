@@ -10,6 +10,7 @@ export interface CaseSettings {
   keepBots: boolean;
   skipNonProse: boolean;
   avoidOrphans: boolean;
+  untaintedTemplates: boolean;
 }
 
 export function bootAinb(): void {
@@ -78,6 +79,7 @@ async function openCase(button: HTMLButtonElement): Promise<void> {
     keepBots: saved?.keepBots === true,
     skipNonProse: saved?.skipNonProse === true,
     avoidOrphans: saved?.avoidOrphans === true,
+    untaintedTemplates: saved?.untaintedTemplates !== false,
   };
   openDialog(article, diffs, settings);
 }
@@ -167,6 +169,17 @@ function openDialog(
       },
     ],
   });
+  form.append({
+    type: "checkbox",
+    list: [
+      {
+        name: "untaintedTemplates",
+        value: "yes",
+        label: "Templates cannot be tainted",
+        checked: settings.untaintedTemplates,
+      },
+    ],
+  });
   if (diffs.length === 0) {
     form.append({
       type: "div",
@@ -212,6 +225,7 @@ function openDialog(
     keepBots: checked(node, "keepBots"),
     skipNonProse: checked(node, "skipNonProse"),
     avoidOrphans: checked(node, "avoidOrphans"),
+    untaintedTemplates: checked(node, "untaintedTemplates"),
   });
   const selectedIds = () => diffs.filter((id) => checked(node, `rev-${id}`));
   const sync = () => {
@@ -273,6 +287,7 @@ async function proceed(
         keepBots: settings.keepBots,
         skipNonProse: settings.skipNonProse,
         avoidOrphans: settings.avoidOrphans,
+        untaintedTemplates: settings.untaintedTemplates,
         trackingPage: casePage(),
         rowActions: true,
         markUnchanged: true,

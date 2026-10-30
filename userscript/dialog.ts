@@ -410,6 +410,19 @@ function appendCleanup(
   });
   form.append({
     type: "checkbox",
+    list: [
+      {
+        name: "untaintedTemplates",
+        value: "yes",
+        label: "Templates cannot be tainted",
+        checked: cleanup.untaintedTemplates !== false,
+        tooltip:
+          "Leave each template as it appears now. A tainted edit cannot remove it or leave a second copy.",
+      },
+    ],
+  });
+  form.append({
+    type: "checkbox",
     adminonly: true,
     list: [
       {
@@ -661,6 +674,7 @@ function readCleanup(form: HTMLFormElement): {
       keepBots: box(form, "keepBots"),
       skipNonProse: box(form, "skipNonProse"),
       avoidOrphans: box(form, "avoidOrphans"),
+      untaintedTemplates: box(form, "untaintedTemplates"),
       trackingPage: text(form, "tracking"),
       summary: text(form, "summary"),
       reason,

@@ -1,4 +1,4 @@
-import { nonProseChanged } from "./nonprose";
+import { nonProseChanged, templateChanged } from "./nonprose";
 import type { Revision, Token } from "./types";
 import { REVERT_LOOKBACK } from "./types";
 import { normalizeNewlines } from "./split";
@@ -87,6 +87,7 @@ export function trivialRollback(
   keepBots = false,
   skipNonProse = false,
   avoidOrphans = false,
+  untaintedTemplates = false,
 ): TrivialRollback | null {
   if (avoidOrphans) return null;
   const undone: number[] = [];
@@ -113,6 +114,8 @@ export function trivialRollback(
       break;
     }
     if (skipNonProse && revisionTouchesNonProse(revisions, i)) return null;
+    if (untaintedTemplates && revisionTouchesTemplate(revisions, i))
+      return null;
     undone.push(revision.revid);
   }
   if (undone.length === 0) return null;
@@ -145,6 +148,19 @@ function revisionTouchesNonProse(
   );
 }
 
+function revisionTouchesTemplate(
+  revisions: readonly Revision[],
+  index: number,
+): boolean {
+  const text = revisions[index]?.content;
+  if (text == null) return true;
+  const parent = index > 0 ? revisions[index - 1]?.content : null;
+  return templateChanged(
+    parent == null ? "" : normalizeNewlines(parent),
+    normalizeNewlines(text),
+  );
+}
+
 /** Index of the nearest older non-bot revision, or -1. `"hidden"` when a deleted revision blocks the walk. */
 function olderSolid(
   revisions: readonly Revision[],
@@ -158,13 +174,14 @@ function olderSolid(
   return -1;
 }
 
-/** Origin-tainted tokens stay out, except structural non-prose. Tainted events are ignored unless that revision is an exact revert. */
+/** Origin-tainted tokens stay out, except structural non-prose and templates that cannot be tainted. Tainted events are ignored unless that revision is an exact revert. */
 export function isPresent(
   token: Token,
   tainted: ReadonlySet<number>,
   reverts: ReadonlySet<number>,
 ): boolean {
-  if (tainted.has(token.origin) && !token.structural) return false;
+  if (tainted.has(token.origin) && !token.structural && !token.inTemplate)
+    return false;
   const evs = token.events.filter(
     (event) => !tainted.has(event.rev) || reverts.has(event.rev),
   );

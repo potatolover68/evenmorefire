@@ -7,6 +7,8 @@ export interface TextToken {
   gapAfter: string;
   /** The token's source range sits in a non-prose span. */
   structural?: boolean;
+  /** The token's source range sits inside `{{...}}`. */
+  inTemplate?: boolean;
 }
 
 export interface SentenceAlignment {

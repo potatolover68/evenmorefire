@@ -1,5 +1,26 @@
 /** Half-open ranges of wikitext that are not article prose. */
 export function nonProseSpans(text: string): Array<[number, number]> {
+  return scanSpans(text, false);
+}
+
+/** Every balanced `{{...}}`, including infoboxes and inline templates. */
+export function templateSpans(text: string): Array<[number, number]> {
+  return scanSpans(text, true);
+}
+
+/** True when the template regions of two texts are not the same strings. */
+export function templateChanged(before: string, after: string): boolean {
+  const left = templateSpans(before).map(([start, end]) => before.slice(start, end));
+  const right = templateSpans(after).map(([start, end]) => after.slice(start, end));
+  if (left.length !== right.length) return true;
+  for (let i = 0; i < left.length; i++) if (left[i] !== right[i]) return true;
+  return false;
+}
+
+function scanSpans(
+  text: string,
+  templatesOnly: boolean,
+): Array<[number, number]> {
   const spans: Array<[number, number]> = [];
   const stack: Frame[] = [];
   let i = 0;
@@ -41,33 +62,33 @@ export function nonProseSpans(text: string): Array<[number, number]> {
       text.startsWith("|}", i)
     ) {
       stack.pop();
-      spans.push([top.start, i + 2]);
+      if (!templatesOnly) spans.push([top.start, i + 2]);
       i += 2;
       continue;
     }
     const tableClose = /^<\/table\s*>/i.exec(text.slice(i));
     if (top?.kind === "table" && top.mode === "html" && tableClose) {
       stack.pop();
-      spans.push([top.start, i + tableClose[0].length]);
+      if (!templatesOnly) spans.push([top.start, i + tableClose[0].length]);
       i += tableClose[0].length;
       continue;
     }
     const refClose = /^<\/ref\s*>/i.exec(text.slice(i));
     if (top?.kind === "ref" && refClose) {
       stack.pop();
-      spans.push([top.start, i + refClose[0].length]);
+      if (!templatesOnly) spans.push([top.start, i + refClose[0].length]);
       i += refClose[0].length;
       continue;
     }
     if (text.startsWith("}}", i) && top?.kind === "template") {
       stack.pop();
-      if (top.keep) spans.push([top.start, i + 2]);
+      if (templatesOnly || top.keep) spans.push([top.start, i + 2]);
       i += 2;
       continue;
     }
     if (text.startsWith("]]", i) && top?.kind === "link") {
       stack.pop();
-      if (top.keep) spans.push([top.start, i + 2]);
+      if (!templatesOnly && top.keep) spans.push([top.start, i + 2]);
       i += 2;
       continue;
     }
@@ -85,7 +106,7 @@ export function nonProseSpans(text: string): Array<[number, number]> {
     const refOpen = /^<ref\b[^>]*>/i.exec(text.slice(i));
     if (refOpen) {
       if (refOpen[0].endsWith("/>")) {
-        spans.push([i, i + refOpen[0].length]);
+        if (!templatesOnly) spans.push([i, i + refOpen[0].length]);
         i += refOpen[0].length;
         continue;
       }

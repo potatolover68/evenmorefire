@@ -91,6 +91,11 @@ export interface Options {
    */
   skipNonProse?: boolean;
   /**
+   * Leave every `{{...}}` as it stands in the latest revision. A tainted
+   * edit cannot remove, rewrite, or duplicate a template.
+   */
+  untaintedTemplates?: boolean;
+  /**
    * Delete a sentence fragment left behind after the rest of its sentence
    * was removed.
    */
@@ -142,6 +147,8 @@ export interface Token {
   claimedGen: number;
   /** Inside a table, block template, category, reference, or file. */
   structural?: boolean;
+  /** Inside any balanced `{{...}}`. */
+  inTemplate?: boolean;
 }
 
 export interface SentenceObj {

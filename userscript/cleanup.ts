@@ -189,6 +189,7 @@ export async function reviewSelection(
     keepBots?: boolean;
     skipNonProse?: boolean;
     avoidOrphans?: boolean;
+    untaintedTemplates?: boolean;
     trackingPage?: string;
     rowActions?: boolean;
     /** When the scrub changes nothing, mark the AIC row unnecessary. */
@@ -204,6 +205,7 @@ export async function reviewSelection(
     keepBots: cleanup.keepBots === true,
     skipNonProse: cleanup.skipNonProse === true,
     avoidOrphans: cleanup.avoidOrphans === true,
+    untaintedTemplates: cleanup.untaintedTemplates !== false,
     trackingPage: cleanup.trackingPage ?? "",
   };
   const ids = [...revids].sort((a, b) => a - b);
@@ -766,6 +768,7 @@ function restoreOptions(host: CleanupHost): Options {
     keepBots: host.session.cleanup.keepBots,
     skipNonProse: host.session.cleanup.skipNonProse,
     avoidOrphans: host.session.cleanup.avoidOrphans,
+    untaintedTemplates: host.session.cleanup.untaintedTemplates !== false,
     onRestoredSection: async (section) =>
       refreshDeprecatedParameters(
         section.text,
@@ -816,6 +819,7 @@ async function scrubPage(
     host.session.cleanup.keepBots,
     host.session.cleanup.skipNonProse,
     host.session.cleanup.avoidOrphans,
+    host.session.cleanup.untaintedTemplates !== false,
   );
   if (rollback && (rollback.emptied || rollback.keptRevid != null)) {
     let content = rollback.content;
@@ -848,6 +852,7 @@ async function scrubPage(
     tainted,
     DEFAULT_OPTIONS.restoreAnchorWindow,
     host.session.cleanup.skipNonProse,
+    host.session.cleanup.untaintedTemplates !== false,
   );
   const tracker = createRevertTracker();
   let seen = 0;
