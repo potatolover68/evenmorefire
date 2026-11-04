@@ -42,6 +42,50 @@ export function articleAuthorshipPercent(
   return (matched / article.length) * 100;
 }
 
+/** Byte growth attributed to `users` across page history (oldest first). */
+export interface SizeRevision {
+  user: string;
+  size: number;
+}
+
+/**
+ * Fallback when WikiWho has no data (drafts, very new pages).
+ * Positive size deltas are credited to the editing user; shrinks are ignored.
+ */
+export function sizeAuthorshipPercent(
+  revisions: readonly SizeRevision[],
+  users: ReadonlySet<string>,
+): number {
+  const names = new Set(
+    [...users].map((name) => name.replace(/_/g, " ").toLowerCase()),
+  );
+  let total = 0;
+  let matched = 0;
+  let previous = 0;
+  for (const revision of revisions) {
+    const size = revision.size;
+    const delta = size - previous;
+    previous = size;
+    if (delta <= 0) continue;
+    total += delta;
+    const user = revision.user.replace(/_/g, " ").toLowerCase();
+    if (names.has(user)) matched += delta;
+  }
+  if (total === 0) return 0;
+  return (matched / total) * 100;
+}
+
+/** Empty, or only templates / comments / whitespace left after a creation scrub. */
+export function isCreationHusk(content: string): boolean {
+  let text = content.replace(/<!--[\s\S]*?-->/g, "");
+  let previous = "";
+  while (previous !== text) {
+    previous = text;
+    text = text.replace(/\{\{[^{}]*\}\}/g, "");
+  }
+  return text.replace(/\s+/g, "").length === 0;
+}
+
 interface WhoToken {
   str: string;
   editor: string;

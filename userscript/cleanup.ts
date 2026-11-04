@@ -25,6 +25,7 @@ import {
   latestRevision,
   latestRevisionId,
   listHistoryMeta,
+  listPageRevisionSizes,
   pageIdOf,
   pageCreationRevid,
   readPage,
@@ -44,7 +45,11 @@ import { releaseIdleContent, loadJobContent } from "./session.ts";
 import { aiTagTemplate, editSummary, prodTemplate } from "./summary.ts";
 import type { CleanupReason, PageJob, Session } from "./types.ts";
 import { defaultCleanup, emptySession } from "./types.ts";
-import { authorshipPercent } from "./wikiwho.ts";
+import {
+  authorshipPercent,
+  isCreationHusk,
+  sizeAuthorshipPercent,
+} from "./wikiwho.ts";
 
 export interface CleanupHost {
   user: string;
@@ -413,14 +418,18 @@ async function processJob(host: CleanupHost, job: PageJob): Promise<void> {
     if (
       auto &&
       job.isNew &&
-      host.session.cleanup.llmprod &&
-      scrubbed.content.trim() === ""
+      (host.session.cleanup.llmprod || host.session.cleanup.aiTag) &&
+      isCreationHusk(scrubbed.content)
     ) {
       job.content = latest.content;
       job.status = "review";
       job.explanations = [
         ...scrubbed.explanations,
-        note("Did not blank this page creation"),
+        note(
+          scrubbed.content.trim() === ""
+            ? "Did not blank this page creation"
+            : "Did not reduce this page creation to templates only",
+        ),
       ];
       prepareReview(job.title, latest, job.content);
       await host.persist();
@@ -502,20 +511,11 @@ async function maybeProd(host: CleanupHost, job: PageJob): Promise<boolean> {
   if (await yieldJob(host, job)) return true;
   if (pageid == null) return false;
   job.pageid = pageid;
-  let percent: number;
-  try {
-    percent = await authorshipPercent(pageid, await userEditorKeys(host.user));
-  } catch (error) {
-    if (await yieldJob(host, job)) return true;
-    job.explanations = [
-      note(
-        error instanceof Error
-          ? `WikiWho: ${error.message}`
-          : "WikiWho request failed",
-      ),
-    ];
-    return false;
-  }
+  const measured = await measureAuthorship(host, job);
+  if (measured == null) return true;
+  if (measured.percent == null) return false;
+  const percent = measured.percent;
+  const source = measured.source;
   if (await yieldJob(host, job)) return true;
   const prod = prodOn && percent > (cleanup.llmprodPercent ?? 0);
   const tag = !prod && tagOn && percent > (cleanup.aiTagPercent ?? 0);
@@ -549,7 +549,10 @@ async function maybeProd(host: CleanupHost, job: PageJob): Promise<boolean> {
       action: prod ? "llm-prod" : "ai-tag",
       start: [0, 0],
       end: [0, 0],
-      details: [`authorship ${percent.toFixed(1)}%`],
+      details: [
+        `authorship ${percent.toFixed(1)}%`,
+        ...(source === "size" ? ["via revision sizes"] : []),
+      ],
     },
   ];
   const automatic = cleanup.llmprodAuto && !cleanup.revdel;
@@ -563,6 +566,44 @@ async function maybeProd(host: CleanupHost, job: PageJob): Promise<boolean> {
   if (await yieldJob(host, job)) return true;
   await commitEdit(host, job, job.content, false);
   return true;
+}
+
+/**
+ * WikiWho first; revision size deltas when WikiWho has no draft/new-page data.
+ * Returns null when the job should yield; percent null when authorship is unknown.
+ */
+async function measureAuthorship(
+  host: CleanupHost,
+  job: PageJob,
+): Promise<{ percent: number; source: "wikiwho" | "size" } | { percent: null; source: null } | null> {
+  const pageid = job.pageid;
+  if (pageid == null) return { percent: null, source: null };
+  try {
+    const percent = await authorshipPercent(
+      pageid,
+      await userEditorKeys(host.user),
+    );
+    if (await yieldJob(host, job)) return null;
+    return { percent, source: "wikiwho" };
+  } catch (wikiWhoError) {
+    if (await yieldJob(host, job)) return null;
+    try {
+      const sizes = await listPageRevisionSizes(job.title);
+      if (await yieldJob(host, job)) return null;
+      const percent = sizeAuthorshipPercent(sizes, new Set([host.user]));
+      return { percent, source: "size" };
+    } catch {
+      if (await yieldJob(host, job)) return null;
+      job.explanations = [
+        note(
+          wikiWhoError instanceof Error
+            ? `WikiWho: ${wikiWhoError.message}`
+            : "WikiWho request failed",
+        ),
+      ];
+      return { percent: null, source: null };
+    }
+  }
 }
 
 function expandProdBanner(title: string, text: string): Promise<string> {

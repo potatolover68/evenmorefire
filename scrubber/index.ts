@@ -250,7 +250,8 @@ export function scrubAnalysis(
   items = refs.items;
   notes = refs.notes;
 
-  const sections = passSections(items, notes, tainted);
+  const sections = passSections(leading, items, notes, tainted);
+  leading = sections.leading;
   items = sections.items;
   notes = sections.notes;
 

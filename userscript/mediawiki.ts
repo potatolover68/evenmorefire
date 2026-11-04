@@ -318,6 +318,44 @@ export async function pageIdOf(title: string): Promise<number | null> {
   return typeof pageid === "number" ? pageid : null;
 }
 
+/** Full page history with user and byte size, oldest first. */
+export async function listPageRevisionSizes(
+  title: string,
+): Promise<Array<{ user: string; size: number }>> {
+  const rows: Array<{ user: string; size: number; revid: number }> = [];
+  let rvcontinue: string | undefined;
+  do {
+    const data = await wikiApi().get(
+      cleanParams({
+        action: "query",
+        prop: "revisions",
+        titles: title,
+        rvprop: "ids|user|size",
+        rvlimit: "max",
+        rvdir: "newer",
+        rvcontinue,
+        format: "json",
+        formatversion: "2",
+      }),
+    );
+    assertOk(data);
+    for (const rev of (pageList(data)[0]?.revisions ?? []) as Record<
+      string,
+      any
+    >[]) {
+      if (typeof rev.revid !== "number") continue;
+      rows.push({
+        revid: rev.revid,
+        user: typeof rev.user === "string" ? rev.user : "",
+        size: typeof rev.size === "number" ? rev.size : 0,
+      });
+    }
+    rvcontinue = data.continue?.rvcontinue as string | undefined;
+  } while (rvcontinue);
+  rows.sort((a, b) => a.revid - b.revid);
+  return rows.map(({ user, size }) => ({ user, size }));
+}
+
 export async function userEditorKeys(user: string): Promise<Set<string>> {
   const data = await wikiApi().get({
     action: "query",

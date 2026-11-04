@@ -1,7 +1,12 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import type { Explanation } from "../../scrubber/types.ts";
-import { indexLines, visualSpanIndexed, type AlignedRow } from "../align.ts";
+import {
+  indexLines,
+  visualSpanIndexed,
+  type AlignedRow,
+  type InlinePart,
+} from "../align.ts";
 import { actionPieces } from "../comments.ts";
 import {
   columnVariants,
@@ -116,11 +121,24 @@ function foldHit(start: number, end: number): boolean {
 
 function lineClass(index: number, side: "before" | "after", row: AlignedRow) {
   const mark = highlight.value;
+  const edited = row.before !== row.after;
   return {
-    del: side === "before" && row.before != null && row.after == null,
-    add: side === "after" && row.after != null && row.before == null,
+    del: side === "before" && row.before != null && edited,
+    add: side === "after" && row.after != null && edited,
     hit: mark != null && index >= mark.from && index <= mark.to,
   };
+}
+
+function lineParts(
+  row: AlignedRow | undefined,
+  side: "before" | "after",
+): InlinePart[] {
+  if (!row) return [];
+  const parts = side === "before" ? row.beforeParts : row.afterParts;
+  if (parts && parts.length > 0) return parts;
+  const text = side === "before" ? row.before : row.after;
+  if (!text) return [];
+  return [{ text, changed: false }];
 }
 
 function barStyle(marker: GutterMarker): Record<string, string> {
@@ -322,7 +340,15 @@ onUnmounted(() => observer?.disconnect());
               "
               :style="slotStyle(item.slotIndex)"
             >
-              {{ rows[item.slot.index]?.before ?? "" }}
+              <span
+                v-for="(part, partIndex) in lineParts(
+                  rows[item.slot.index],
+                  'before',
+                )"
+                :key="partIndex"
+                :class="{ change: part.changed }"
+                >{{ part.text }}</span
+              >
             </div>
             <button
               v-else
@@ -368,7 +394,15 @@ onUnmounted(() => observer?.disconnect());
               "
               :style="slotStyle(item.slotIndex)"
             >
-              {{ rows[item.slot.index]?.after ?? "" }}
+              <span
+                v-for="(part, partIndex) in lineParts(
+                  rows[item.slot.index],
+                  'after',
+                )"
+                :key="partIndex"
+                :class="{ change: part.changed }"
+                >{{ part.text }}</span
+              >
             </div>
             <button
               v-else

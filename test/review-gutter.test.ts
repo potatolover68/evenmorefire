@@ -4,7 +4,9 @@ import {
   indexAfterLines,
   visualSpan,
   visualSpanIndexed,
+  type InlinePart,
 } from "../userscript/align.ts";
+import { displaySlots } from "../userscript/folds.ts";
 import {
   columnColor,
   columnVariants,
@@ -34,7 +36,74 @@ describe("aligned diff", () => {
     expect(visualSpanIndexed(index, 1, 1)).toEqual(visualSpan(rows, 1, 1));
     expect(visualSpanIndexed(index, 0, 2)).toEqual(visualSpan(rows, 0, 2));
   });
+
+  it("marks only the changed words of a similar line", () => {
+    const rows = alignSides("The quick brown fox", "The quick red fox");
+    expect(rows).toHaveLength(1);
+    const row = rows[0]!;
+    expect(row.before).toBe("The quick brown fox");
+    expect(row.after).toBe("The quick red fox");
+    expect(changedText(row.beforeParts)).toBe("brown");
+    expect(changedText(row.afterParts)).toBe("red");
+    expect(joined(row.beforeParts)).toBe(row.before);
+    expect(joined(row.afterParts)).toBe(row.after);
+  });
+
+  it("leaves an unrelated replacement as a full-line delete and insert", () => {
+    const rows = alignSides(
+      "Alpha sentence about widgets.",
+      "Completely different discussion of policy.",
+    );
+    expect(rows.map((row) => [row.before, row.after])).toEqual([
+      ["Alpha sentence about widgets.", null],
+      [null, "Completely different discussion of policy."],
+    ]);
+    expect(
+      rows.every((row) => row.beforeParts == null && row.afterParts == null),
+    ).toBe(true);
+  });
+
+  it("does not fold a paired row whose text differs", () => {
+    const rows = alignSides(
+      [
+        "same one",
+        "same two",
+        "same three",
+        "The quick brown fox",
+        "tail one",
+        "tail two",
+        "tail three",
+      ].join("\n"),
+      [
+        "same one",
+        "same two",
+        "same three",
+        "The quick red fox",
+        "tail one",
+        "tail two",
+        "tail three",
+      ].join("\n"),
+    );
+    const changed = rows.findIndex((row) => row.before?.includes("brown"));
+    expect(changed).toBeGreaterThanOrEqual(0);
+    expect(rows[changed]?.before).not.toBe(rows[changed]?.after);
+    const slots = displaySlots(rows, new Set());
+    expect(
+      slots.some((slot) => slot.kind === "line" && slot.index === changed),
+    ).toBe(true);
+  });
 });
+
+function changedText(parts: readonly InlinePart[] | undefined): string {
+  return (parts ?? [])
+    .filter((part) => part.changed)
+    .map((part) => part.text)
+    .join("");
+}
+
+function joined(parts: readonly InlinePart[] | undefined): string {
+  return (parts ?? []).map((part) => part.text).join("");
+}
 
 describe("gutter colors", () => {
   it("shifts neighboring bars of the same action when the details differ", () => {

@@ -19,7 +19,11 @@ import {
   editSummary,
   prodTemplate,
 } from "../userscript/summary.ts";
-import { tokenEditors } from "../userscript/wikiwho.ts";
+import {
+  isCreationHusk,
+  sizeAuthorshipPercent,
+  tokenEditors,
+} from "../userscript/wikiwho.ts";
 
 function contrib(patch: Partial<Contrib> = {}): Contrib {
   return {
@@ -373,5 +377,45 @@ describe("WikiWho tokens", () => {
         ],
       }),
     ).toEqual(["9", "0|1.2.3.4"]);
+  });
+});
+
+describe("size authorship fallback", () => {
+  it("credits positive byte growth like Draft:Robert Coleman", () => {
+    const percent = sizeAuthorshipPercent(
+      [
+        { user: "Russo-winner1234", size: 5076 },
+        { user: "Rosiestep", size: 5076 },
+        { user: "Rosiestep", size: 5179 },
+      ],
+      new Set(["Russo-winner1234"]),
+    );
+    expect(percent).toBeCloseTo((5076 / 5179) * 100, 5);
+    expect(percent).toBeGreaterThan(25);
+  });
+
+  it("matches usernames case-insensitively and with underscores", () => {
+    expect(
+      sizeAuthorshipPercent(
+        [
+          { user: "Example_User", size: 80 },
+          { user: "Other", size: 100 },
+        ],
+        new Set(["example user"]),
+      ),
+    ).toBe(80);
+  });
+});
+
+describe("creation husks", () => {
+  it("treats empty and template-only leftovers as husks", () => {
+    expect(isCreationHusk("")).toBe(true);
+    expect(isCreationHusk("{{Infobox person|name=Bot}}")).toBe(true);
+    expect(
+      isCreationHusk("{{Infobox person|name=Bot}}\n\n{{Short description|x}}"),
+    ).toBe(true);
+    expect(isCreationHusk("{{Infobox person|name=Bot}}\n\nProse left.")).toBe(
+      false,
+    );
   });
 });

@@ -78,6 +78,12 @@ body {
 .line.add {
   background: #d6f5d6;
 }
+.line.del .change {
+  background: #e9a0a0;
+}
+.line.add .change {
+  background: #8fd48f;
+}
 .line.hit {
   box-shadow: inset 4px 0 0 #c80;
 }

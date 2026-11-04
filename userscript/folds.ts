@@ -2,7 +2,7 @@ import type { AlignedRow } from "./align.ts";
 import { LINE_PX, rowHeights } from "./rows.ts";
 
 export function isUnchanged(row: AlignedRow): boolean {
-  return row.before != null && row.after != null;
+  return row.before != null && row.after != null && row.before === row.after;
 }
 
 export interface DisplayLine {
