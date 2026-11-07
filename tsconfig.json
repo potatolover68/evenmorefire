@@ -2,6 +2,7 @@
   "files": [],
   "references": [
     { "path": "./tsconfig.node.json" },
-    { "path": "./tsconfig.scrubber.json" }
+    { "path": "./tsconfig.scrubber.json" },
+    { "path": "./tsconfig.restorer.json" }
   ]
 }

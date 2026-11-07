@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023", "DOM"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "moduleDetection": "force",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "verbatimModuleSyntax": true,
+    "erasableSyntaxOnly": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "allowImportingTsExtensions": true,
+    "isolatedModules": true,
+    /* Global `mw`, `$`, and OOUI types. Kept out of tsconfig.scrubber.json,
+       whose userscript/mw.d.ts declares a conflicting global `mw`. */
+    "types": ["types-mediawiki"]
+  },
+  "include": ["restorer/**/*.ts"]
+}
