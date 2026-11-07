@@ -13,13 +13,114 @@ export interface Prefs {
   summary: string;
   /** "" when unset. */
   tracking: string;
+  /** True when tracking was automatically detected for the current page. */
+  autoTracking?: boolean;
 }
 
-export function loadPrefs(store: PrefStore | null): Prefs {
+export function loadPrefs(
+  store: PrefStore | null,
+  currentPageTitle?: string,
+): Prefs {
+  cleanAccidentalOriginStorage(store);
+  const summary = readPref(store, SUMMARY_KEY);
+  const explicitTracking = readPref(store, TRACKING_KEY);
+
+  // If the user explicitly set a tracking page in storage, use it.
+  // Otherwise, dynamically detect from ainb-case-origin for the current page ONLY,
+  // without writing to storage (so the storage remains blank/unset).
+  const autoTracking = !explicitTracking
+    ? getAinbCaseOriginTracking(currentPageTitle)
+    : null;
+  const tracking = explicitTracking || autoTracking || "";
+
+  const isAuto = Boolean(!explicitTracking && autoTracking);
+
   return {
-    summary: readPref(store, SUMMARY_KEY),
-    tracking: readPref(store, TRACKING_KEY),
+    summary,
+    tracking,
+    ...(isAuto ? { autoTracking: true } : {}),
   };
+}
+
+function cleanAccidentalOriginStorage(store: PrefStore | null): void {
+  try {
+    if (!store) return;
+    const tracking = store.getItem(TRACKING_KEY);
+    if (!tracking) return;
+    const origin = getAinbCaseOriginTracking();
+    if (
+      origin &&
+      normalizeTrackingPage(tracking) === normalizeTrackingPage(origin)
+    ) {
+      store.removeItem(TRACKING_KEY);
+    }
+  } catch {
+    // Ignore
+  }
+}
+
+/**
+ * Reads `ainb-case-origin` from mw.storage / localStorage.
+ * Finds any case whose `articles` array contains `currentPageTitle`.
+ * If exactly one case matches, returns that case as the tracking page.
+ */
+export function getAinbCaseOriginTracking(
+  currentPageTitle?: string,
+): string | null {
+  try {
+    const current =
+      currentPageTitle ??
+      (typeof mw !== "undefined" && mw.config
+        ? String(mw.config.get("wgPageName") ?? "").replace(/_/g, " ").trim()
+        : "");
+    if (!current) return null;
+
+    let obj: unknown = null;
+    if (
+      typeof mw !== "undefined" &&
+      mw.storage &&
+      typeof mw.storage.getObject === "function"
+    ) {
+      obj = mw.storage.getObject("ainb-case-origin");
+    } else if (typeof localStorage !== "undefined") {
+      const raw = localStorage.getItem("ainb-case-origin");
+      if (raw) obj = JSON.parse(raw);
+    }
+    if (obj && typeof obj === "object" && !Array.isArray(obj)) {
+      const targetNorm = normalizePageMatch(current);
+      const matchingCases: string[] = [];
+
+      for (const [caseName, caseData] of Object.entries(
+        obj as Record<string, unknown>,
+      )) {
+        if (
+          caseData &&
+          typeof caseData === "object" &&
+          Array.isArray((caseData as { articles?: unknown }).articles)
+        ) {
+          const articles = (caseData as { articles: unknown[] }).articles;
+          const matches = articles.some(
+            (art) =>
+              typeof art === "string" && normalizePageMatch(art) === targetNorm,
+          );
+          if (matches) {
+            matchingCases.push(caseName);
+          }
+        }
+      }
+
+      if (matchingCases.length === 1 && matchingCases[0]?.trim()) {
+        return normalizeTrackingPage(matchingCases[0]);
+      }
+    }
+  } catch {
+    // Ignore storage/JSON errors
+  }
+  return null;
+}
+
+function normalizePageMatch(title: string): string {
+  return title.replace(/_/g, " ").replace(/\s+/g, " ").trim().toLowerCase();
 }
 
 /**

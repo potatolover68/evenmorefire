@@ -83,7 +83,7 @@ function onClick(
   event: MouseEvent,
 ): void {
   if (busy) return;
-  const prefs = loadPrefs(prefStore());
+  const prefs = loadPrefs(prefStore(), currentTitle());
   switch (clickAction(event)) {
     case "edit-summary":
       editPref(
@@ -191,7 +191,7 @@ function showStashedNotice(): void {
 }
 
 function refreshLinks(): void {
-  const prefs = loadPrefs(prefStore());
+  const prefs = loadPrefs(prefStore(), currentTitle());
   const label = linkLabel(prefs);
   const tooltip = linkTooltip(prefs);
   for (const link of document.querySelectorAll<HTMLAnchorElement>(
@@ -201,6 +201,10 @@ function refreshLinks(): void {
     if (tooltip) link.title = tooltip;
     else link.removeAttribute("title");
   }
+}
+
+function currentTitle(): string {
+  return String(mw.config.get("wgPageName") ?? "").replace(/_/g, " ");
 }
 
 function prefStore(): PrefStore | null {

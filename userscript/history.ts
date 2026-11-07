@@ -112,6 +112,13 @@ function openDialog(edits: HistoryEdit[]): void {
     name: "summary",
     label: "Additional edit summary",
   });
+  const autoTracking = getAinbCaseOriginTracking(title);
+  form.append({
+    type: "input",
+    name: "tracking",
+    label: "AI cleanup tracking page",
+    value: autoTracking ?? "",
+  });
   form.append({
     type: "select",
     name: "reason",
@@ -168,6 +175,10 @@ function openDialog(edits: HistoryEdit[]): void {
     const summary =
       node.querySelector<HTMLInputElement>('input[name="summary"]')?.value ??
       "";
+    const tracking =
+      node.querySelector<HTMLInputElement>('input[name="tracking"]')?.value.trim() ||
+      autoTracking ||
+      "";
     if (selected.size === 0 || reason === "" || !summary.trim()) return;
     const button = node.querySelector<HTMLInputElement>('input[name="remove"]');
     if (button) button.disabled = true;
@@ -180,7 +191,12 @@ function openDialog(edits: HistoryEdit[]): void {
         page,
         [...selected],
         metas,
-        { reason, summary },
+        {
+          reason,
+          summary,
+          trackingPage: tracking || undefined,
+          rowActions: true,
+        },
         say,
       );
     } catch (error) {
@@ -206,4 +222,70 @@ function readReason(form: HTMLFormElement): Exclude<CleanupReason, ""> | "" {
   )?.value;
   if (value === "AI" || value === "CV" || value === "other") return value;
   return "";
+}
+
+/**
+ * Reads `ainb-case-origin` from mw.storage / localStorage.
+ * Finds any case whose `articles` array contains `currentPageTitle`.
+ * If exactly one case matches, returns that case as the tracking page.
+ */
+export function getAinbCaseOriginTracking(
+  currentPageTitle?: string,
+): string | null {
+  try {
+    const current =
+      currentPageTitle ??
+      (typeof mw !== "undefined" && mw.config
+        ? String(mw.config.get("wgPageName") ?? "").replace(/_/g, " ").trim()
+        : "");
+    if (!current) return null;
+
+    let obj: unknown = null;
+    if (
+      typeof mw !== "undefined" &&
+      mw.storage &&
+      typeof mw.storage.getObject === "function"
+    ) {
+      obj = mw.storage.getObject("ainb-case-origin");
+    } else if (typeof localStorage !== "undefined") {
+      const raw = localStorage.getItem("ainb-case-origin");
+      if (raw) obj = JSON.parse(raw);
+    }
+    if (obj && typeof obj === "object" && !Array.isArray(obj)) {
+      const targetNorm = current
+        .replace(/_/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+        .toLowerCase();
+      const matchingCases: string[] = [];
+
+      for (const [caseName, caseData] of Object.entries(
+        obj as Record<string, unknown>,
+      )) {
+        if (
+          caseData &&
+          typeof caseData === "object" &&
+          Array.isArray((caseData as { articles?: unknown }).articles)
+        ) {
+          const articles = (caseData as { articles: unknown[] }).articles;
+          const matches = articles.some(
+            (art) =>
+              typeof art === "string" &&
+              art.replace(/_/g, " ").replace(/\s+/g, " ").trim().toLowerCase() ===
+                targetNorm,
+          );
+          if (matches) {
+            matchingCases.push(caseName);
+          }
+        }
+      }
+
+      if (matchingCases.length === 1 && matchingCases[0]?.trim()) {
+        return matchingCases[0].trim().replace(/_/g, " ");
+      }
+    }
+  } catch {
+    // Ignore storage/JSON errors
+  }
+  return null;
 }

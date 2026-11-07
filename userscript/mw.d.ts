@@ -28,6 +28,10 @@ declare global {
         tooltip?: string,
       ): HTMLLIElement | null;
     };
+    storage?: {
+      getObject(key: string): any;
+      get(key: string): string | null | false;
+    };
     Api: new () => MwApi;
   }
 

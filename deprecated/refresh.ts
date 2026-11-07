@@ -56,7 +56,7 @@ const DEFAULT_API = "https://en.wikipedia.org/w/api.php";
 const TITLE_BATCH = 50;
 const HISTORY_CONCURRENCY = 4;
 const CACHE_LIMIT = 64;
-const STORAGE_PREFIX = "emf-dep:";
+const STORAGE_PREFIX = "emf-dep-v4:";
 /** Maximum backwards revisions to examine for a single template. */
 const MAX_BACKWARDS_REVISIONS = 500;
 

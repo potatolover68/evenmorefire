@@ -32,7 +32,12 @@ export function linkLabel(prefs: Prefs): string {
 
 /** The extra summary and the tracking page, one per line. "" when neither is set. */
 export function linkTooltip(prefs: Prefs): string {
-  return [prefs.summary, prefs.tracking]
+  const trackingLine = prefs.tracking
+    ? prefs.autoTracking
+      ? `${prefs.tracking} (automatically detected)`
+      : prefs.tracking
+    : "";
+  return [prefs.summary, trackingLine]
     .filter((line) => line !== "")
     .join("\n");
 }
