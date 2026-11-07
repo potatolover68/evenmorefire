@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  clearTemplateRevisionCache,
   refreshDeprecatedParameters,
   type SnippetComment,
   type TemplateRevision,
 } from "../deprecated/refresh.ts";
+import { compactHistory, hasRuleMachinery, parseRevision } from "../deprecated/rules.ts";
 
 const body = (rules: string) =>
   `<includeonly>{{#invoke:Check for deprecated parameters|check\n${rules}\n}}</includeonly>\n{{{fname1|}}}\n`;
@@ -136,5 +138,273 @@ describe("refreshDeprecatedParameters", () => {
     );
     expect(result.text).toBe(text);
     expect(result.comments).toEqual([]);
+  });
+
+  it("fetches each template title once per refresh", async () => {
+    const calls: string[] = [];
+    const fetch = async (title: string): Promise<TemplateRevision[]> => {
+      calls.push(title);
+      if (title === "Template:Infobox person") return history;
+      return [{ revid: 1, timestamp: "2024-01-01T00:00:00Z", content: "plain" }];
+    };
+    await refreshDeprecatedParameters(
+      "{{Infobox person|first_name=Ann}} {{cite web|url=x}} {{cite web|title=y}}",
+      [],
+      "2019-01-01T00:00:00Z",
+      fetch,
+    );
+    expect(calls.sort()).toEqual([
+      "Template:Infobox person",
+      "Template:cite web",
+    ]);
+  });
+});
+
+describe("compactHistory", () => {
+  it("collapses consecutive identical rule sets", () => {
+    const many: TemplateRevision[] = [];
+    for (let i = 1; i <= 100; i++) {
+      const minute = String(Math.floor((i - 1) / 60)).padStart(2, "0");
+      const second = String((i - 1) % 60).padStart(2, "0");
+      many.push({
+        revid: i,
+        timestamp: `2020-01-01T00:${minute}:${second}Z`,
+        content: body("| first_name = fname1"),
+      });
+    }
+    many.push({
+      revid: 101,
+      timestamp: "2020-02-01T00:00:00Z",
+      content: body("| first_name = fname1\n| _remove = old"),
+    });
+    const compact = compactHistory("Template:Infobox person", many);
+    expect(compact.revisions.length).toBe(2);
+    expect(compact.revisions[0]?.revid).toBe(100);
+    expect(compact.revisions[0]?.timestamp).toBe("2020-01-01T00:00:00Z");
+    expect(compact.revisions[0]?.revisedAt).toBe("2020-01-01T00:01:39Z");
+    expect(compact.revisions[1]?.revid).toBe(101);
+    expect(compact.revisions[1]?.revisedAt).toBe("2020-02-01T00:00:00Z");
+    expect(compact.tipRevid).toBe(101);
+  });
+
+  it("still prefers the long-lived rename after collapse", async () => {
+    const padded: TemplateRevision[] = [];
+    for (let i = 0; i < 50; i++) {
+      padded.push({
+        revid: 1000 + i,
+        timestamp: `2019-06-01T00:${String(i).padStart(2, "0")}:00Z`,
+        content: body("| first_name = fname1"),
+      });
+    }
+    padded.push(...history);
+    const result = await refreshDeprecatedParameters(
+      "{{Infobox person|first_name=Ann}}",
+      [],
+      "2019-01-01T00:00:00Z",
+      async (title) =>
+        title === "Template:Infobox person" ? padded : [],
+    );
+    expect(result.text).toBe("{{Infobox person|fname1=Ann}}");
+  });
+});
+
+describe("rule machinery gate", () => {
+  it("detects templates with no deprecation rules", () => {
+    expect(hasRuleMachinery(parseRevision("{{cite web|url=x}}"))).toBe(false);
+    expect(hasRuleMachinery(parseRevision(body("| a = b")))).toBe(true);
+    expect(
+      hasRuleMachinery(
+        parseRevision(
+          '<templatedata>{"params":{"name":{"aliases":["foo"]}}}</templatedata>',
+        ),
+      ),
+    ).toBe(true);
+  });
+});
+
+describe("API query shapes", () => {
+  it("keeps single-page-only rv params off multi-title queries", async () => {
+    clearTemplateRevisionCache();
+    const calls: URLSearchParams[] = [];
+    const original = globalThis.fetch;
+    // legal names come from the tip revision, so it must declare fname1
+    const tip = "{{cite web|url=x}}\n{{{fname1|}}}";
+    const rules = body("| first_name = fname1");
+    const revision = (revid: number, timestamp: string, content: string) => ({
+      revid,
+      timestamp,
+      slots: { main: { content } },
+    });
+    globalThis.fetch = (async (input: unknown) => {
+      const params = new URL(input as string).searchParams;
+      calls.push(params);
+      const isHistory = params.get("rvdir") === "older";
+      const titles = params.get("titles") ?? "";
+      const pages: unknown[] = [];
+      if (!isHistory) {
+        for (const title of titles.split("|")) {
+          pages.push({
+            title,
+            revisions: [revision(2, "2024-01-01T00:00:00Z", tip)],
+          });
+        }
+      } else {
+        pages.push({
+          title: titles,
+          revisions: [
+            revision(1, "2020-01-01T00:00:00Z", rules),
+          ],
+        });
+      }
+      return {
+        ok: true,
+        json: async () => ({ query: { pages } }),
+      } as unknown as Response;
+    }) as unknown as typeof fetch;
+    let text = "";
+    try {
+      const result = await refreshDeprecatedParameters(
+        "{{cite web|first_name=Ann}} {{cite book|first_name=Bob}}",
+        [],
+        "2019-01-01T00:00:00Z",
+        { apiRoot: "https://example.org/w/api.php" },
+      );
+      text = result.text;
+    } finally {
+      globalThis.fetch = original;
+    }
+    expect(text).toBe("{{cite web|fname1=Ann}} {{cite book|fname1=Bob}}");
+    for (const params of calls) {
+      const titles = params.get("titles") ?? "";
+      if (!titles.includes("|")) continue;
+      expect(params.has("rvlimit")).toBe(false);
+      expect(params.has("rvdir")).toBe(false);
+      expect(params.has("rvstart")).toBe(false);
+    }
+  });
+
+  it("skips history lookup when all invoked parameters are already legal", async () => {
+    clearTemplateRevisionCache();
+    const calls: URLSearchParams[] = [];
+    const original = globalThis.fetch;
+    const legalTip = "{{reflist}}\n{{{date|}}}\n{{{url|}}}";
+    globalThis.fetch = (async (input: unknown) => {
+      const params = new URL(input as string).searchParams;
+      calls.push(params);
+      const titles = (params.get("titles") ?? "").split("|");
+      return {
+        ok: true,
+        json: async () => ({
+          query: {
+            pages: titles.map((title, i) => ({
+              title,
+              revisions: [
+                {
+                  revid: i + 1,
+                  timestamp: "2026-01-01T00:00:00Z",
+                  slots: { main: { content: legalTip } },
+                },
+              ],
+            })),
+          },
+        }),
+      } as unknown as Response;
+    }) as unknown as typeof fetch;
+
+    try {
+      // Both templates use parameters that are 100% legal in legalTip (or zero params)
+      const res = await refreshDeprecatedParameters(
+        "{{use dmy dates|date=2026}} {{reflist}}",
+        [],
+        "2024-01-01T00:00:00Z",
+        { apiRoot: "https://example.org/w/api.php" },
+      );
+      expect(res.text).toBe("{{use dmy dates|date=2026}} {{reflist}}");
+    } finally {
+      globalThis.fetch = original;
+    }
+
+    // Only the single initial batch probe was sent! Zero history calls!
+    expect(calls.length).toBe(1);
+    expect(calls[0]!.get("titles")).toContain("Template:use dmy dates");
+    expect(calls[0]!.get("titles")).toContain("Template:reflist");
+  });
+
+  it("queries history backwards using rvdir=older when unknown parameters exist", async () => {
+    clearTemplateRevisionCache();
+    const calls: URLSearchParams[] = [];
+    const original = globalThis.fetch;
+    const tipWithoutUnknown = "{{Infobox person}}\n{{{name|}}}";
+    const olderWithRule = body("| unknown_param = name");
+
+    globalThis.fetch = (async (input: unknown) => {
+      const params = new URL(input as string).searchParams;
+      calls.push(params);
+      const isHistory = params.get("rvdir") === "older";
+      if (!isHistory) {
+        return {
+          ok: true,
+          json: async () => ({
+            query: {
+              pages: [
+                {
+                  title: "Template:Infobox person",
+                  revisions: [
+                    {
+                      revid: 200,
+                      timestamp: "2026-11-01T00:00:00Z",
+                      slots: { main: { content: tipWithoutUnknown } },
+                    },
+                  ],
+                },
+              ],
+            },
+          }),
+        } as unknown as Response;
+      }
+      return {
+        ok: true,
+        json: async () => ({
+          query: {
+            pages: [
+              {
+                title: "Template:Infobox person",
+                revisions: [
+                  {
+                    revid: 100,
+                    timestamp: "2026-10-01T00:00:00Z",
+                    slots: { main: { content: olderWithRule } },
+                  },
+                ],
+              },
+            ],
+          },
+        }),
+      } as unknown as Response;
+    }) as unknown as typeof fetch;
+
+    try {
+      const res = await refreshDeprecatedParameters(
+        "{{Infobox person|unknown_param=Ann}}",
+        [],
+        "2026-09-01T00:00:00Z",
+        { apiRoot: "https://example.org/w/api.php" },
+      );
+      expect(res.text).toBe("{{Infobox person|name=Ann}}");
+    } finally {
+      globalThis.fetch = original;
+    }
+
+    // The history fetch query must be rvdir=older
+    const historyCall = calls.find((c) => c.has("rvdir"));
+    expect(historyCall).toBeDefined();
+    expect(historyCall!.get("rvdir")).toBe("older");
+  });
+});
+
+describe("cache control", () => {
+  it("clearTemplateRevisionCache is safe to call repeatedly", () => {
+    clearTemplateRevisionCache();
+    clearTemplateRevisionCache();
   });
 });

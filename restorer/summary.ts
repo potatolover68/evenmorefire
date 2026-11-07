@@ -5,8 +5,8 @@ export function restoreSummary(
   user: string | null,
   extra: string,
 ): string {
-  const author = user ? `[[User:${user}|${user}]]` : "a hidden user";
-  const base = `${RESTORER}: restored revision [[Special:PermanentLink/${revid}|${revid}]] by ${author}`;
+  const author = user ? ` by [[Special:Contributions/${user}|${user}]]` : "";
+  const base = `${RESTORER}: restored revision [[Special:PermanentLink/${revid}|${revid}]]${author}`;
   const tail = extra.trim();
   return tail ? `${base}. ${tail}` : base;
 }

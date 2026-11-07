@@ -1,10 +1,13 @@
+import type {
+  DeclaredPair,
+  ParsedRevision,
+  RegexpRule,
+  TemplateHistory,
+  TemplateRevision,
+} from "./types.ts";
 import { findTemplates } from "./wikitext.ts";
-import type { TemplateRevision } from "./types.ts";
 
-export interface DeclaredPair {
-  from: string;
-  to: string;
-}
+export type { DeclaredPair, ParsedRevision, RegexpRule } from "./types.ts";
 
 interface EdgeAcc {
   from: string;
@@ -14,9 +17,12 @@ interface EdgeAcc {
 }
 
 interface RevisionInfo {
+  /** Timestamp of `revid` (for citations). */
   timestamp: string;
   pairs: Set<string>;
-  regexps: Array<{ find: string; replace: string }>;
+  regexps: RegexpRule[];
+  /** Same portion() weight used for pair edges. */
+  weight: number;
 }
 
 export interface RuleModel {
@@ -30,27 +36,119 @@ export interface ResolvedParam {
   pairs: string[];
 }
 
+export interface ParsedRules {
+  pairs: DeclaredPair[];
+  regexps: RegexpRule[];
+}
+
 const META_PARAMS = new Set(["_category", "preview", "ignoreblank"]);
 const REGEXP_KEY = /^_regexp[1-9][0-9]*$/i;
 const INVOKE_NAMES = new Set([
   "#invoke:check for deprecated parameters",
   "#invoke:module:check for deprecated parameters",
 ]);
+/** nowiki, noinclude, and HTML comments — ranges to skip while scanning. */
+const PROTECTED =
+  /<(nowiki|noinclude)\b[^>]*>[\s\S]*?<\/\1\s*>|<!--[\s\S]*?-->/gi;
 
 export function pairKey(from: string, to: string): string {
   return `${from}\0${to}`;
 }
 
-export function weightModel(
+/** True when the latest wikitext can produce renames/removals. */
+export function hasRuleMachinery(rules: ParsedRules): boolean {
+  return rules.pairs.length > 0 || rules.regexps.length > 0;
+}
+
+export function parseRevision(content: string): ParsedRules {
+  const pairs: DeclaredPair[] = [];
+  const regexps: RegexpRule[] = [];
+  const skip = protectedRanges(content);
+  for (const template of findTemplates(content)) {
+    if (!isDeprecatedInvoke(template.name)) continue;
+    if (rangeBlocked(template.start, skip)) continue;
+    const parsed = invokeRules(content.slice(template.start, template.end));
+    pairs.push(...parsed.pairs);
+    regexps.push(...parsed.regexps);
+  }
+  pairs.push(...templateDataAliases(content));
+  return { pairs, regexps };
+}
+
+export function legalNames(content: string): Set<string> {
+  const names = new Set<string>();
+  const data = templateData(content);
+  if (data?.params && typeof data.params === "object") {
+    for (const [key, spec] of Object.entries(
+      data.params as Record<string, { aliases?: unknown }>,
+    )) {
+      if (key) names.add(key);
+      if (!Array.isArray(spec?.aliases)) continue;
+      for (const alias of spec.aliases)
+        if (typeof alias === "string" && alias) names.add(alias);
+    }
+  }
+  const skip = protectedRanges(content);
+  for (const match of content.matchAll(
+    /\{\{\{\s*([^{}|]+?)\s*(?:\||\}\})/g,
+  )) {
+    if (match.index != null && rangeBlocked(match.index, skip)) continue;
+    const name = match[1]?.trim();
+    if (name) names.add(name);
+  }
+  return names;
+}
+
+/** Collapse consecutive revisions with identical rules; drop wikitext. */
+export function compactHistory(
+  title: string,
   revisions: readonly TemplateRevision[],
-  snippetTimestamp: number,
-  now = Date.now(),
-): RuleModel {
+): TemplateHistory {
+  if (revisions.length === 0) {
+    return { title, tipRevid: null, legal: new Set(), revisions: [] };
+  }
   const ordered = [...revisions].sort(
     (a, b) => a.timestamp.localeCompare(b.timestamp) || a.revid - b.revid,
   );
-  const current = ordered[ordered.length - 1];
-  const legal = current ? legalNames(current.content) : new Set<string>();
+  const last = ordered[ordered.length - 1]!;
+  const legal = legalNames(last.content);
+  const collapsed: ParsedRevision[] = [];
+  for (const rev of ordered) {
+    const rules = parseRevision(rev.content);
+    const prev = collapsed[collapsed.length - 1];
+    if (prev && sameRules(prev, rules)) {
+      collapsed[collapsed.length - 1] = {
+        ...prev,
+        revid: rev.revid,
+        revisedAt: rev.timestamp,
+      };
+      continue;
+    }
+    collapsed.push({
+      revid: rev.revid,
+      timestamp: rev.timestamp,
+      revisedAt: rev.timestamp,
+      pairs: rules.pairs,
+      regexps: rules.regexps,
+    });
+  }
+  return {
+    title,
+    tipRevid: last.revid,
+    legal,
+    revisions: collapsed,
+  };
+}
+
+export function weightModel(
+  history: TemplateHistory | readonly TemplateRevision[],
+  snippetTimestamp: number,
+  now = Date.now(),
+): RuleModel {
+  const compact = isTemplateHistory(history)
+    ? history
+    : compactHistory("", history);
+  const ordered = compact.revisions;
   const edges = new Map<string, EdgeAcc>();
   const byRevid = new Map<number, RevisionInfo>();
 
@@ -60,21 +158,87 @@ export function weightModel(
     const start = Date.parse(rev.timestamp);
     const end = next ? Date.parse(next.timestamp) : Math.max(now, start);
     if (!Number.isFinite(start) || !Number.isFinite(end)) continue;
-    const parsed = parseRevision(rev.content);
-    const keys = new Set(
-      parsed.pairs.map((pair) => pairKey(pair.from, pair.to)),
-    );
-    byRevid.set(rev.revid, {
-      timestamp: rev.timestamp,
-      pairs: keys,
-      regexps: parsed.regexps,
-    });
     const weight = portion(start, end, snippetTimestamp, now);
-    for (const pair of parsed.pairs)
+    const keys = new Set(rev.pairs.map((pair) => pairKey(pair.from, pair.to)));
+    byRevid.set(rev.revid, {
+      timestamp: rev.revisedAt,
+      pairs: keys,
+      regexps: rev.regexps,
+      weight,
+    });
+    for (const pair of rev.pairs)
       addEdge(edges, pair.from, pair.to, weight, rev.revid);
   }
 
-  return { legal, edges: [...edges.values()], byRevid };
+  return {
+    legal: new Set(compact.legal),
+    edges: [...edges.values()],
+    byRevid,
+  };
+}
+
+export function resolveParam(
+  model: RuleModel,
+  name: string,
+): ResolvedParam | null {
+  const resolved = walk(model, name, new Set(), 0);
+  if (!resolved || resolved.to === name) return null;
+  return resolved;
+}
+
+export function citeRevision(
+  model: RuleModel,
+  pairs: readonly string[],
+): { revid: number; timestamp: string } | null {
+  if (pairs.length === 0) return null;
+  const revisions = [...model.byRevid.entries()].sort((a, b) => b[0] - a[0]);
+  const has = (info: RevisionInfo, pair: string): boolean => {
+    if (info.pairs.has(pair)) return true;
+    const split = pair.split("\0");
+    const from = split[0] ?? "";
+    const to = split[1] ?? "";
+    return info.regexps.some(
+      (rule) =>
+        luaMatch(from, rule.find) &&
+        luaGsub(from, rule.find, rule.replace) === to,
+    );
+  };
+  for (const [revid, info] of revisions) {
+    if (pairs.every((pair) => has(info, pair)))
+      return { revid, timestamp: info.timestamp };
+  }
+  for (const [revid, info] of revisions) {
+    if (pairs.some((pair) => has(info, pair)))
+      return { revid, timestamp: info.timestamp };
+  }
+  return null;
+}
+
+function isTemplateHistory(
+  value: TemplateHistory | readonly TemplateRevision[],
+): value is TemplateHistory {
+  return (
+    value != null &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    Array.isArray((value as TemplateHistory).revisions)
+  );
+}
+
+export function sameRules(prev: ParsedRevision, next: ParsedRules): boolean {
+  if (prev.pairs.length !== next.pairs.length) return false;
+  if (prev.regexps.length !== next.regexps.length) return false;
+  for (let i = 0; i < prev.pairs.length; i++) {
+    const a = prev.pairs[i]!;
+    const b = next.pairs[i]!;
+    if (a.from !== b.from || a.to !== b.to) return false;
+  }
+  for (let i = 0; i < prev.regexps.length; i++) {
+    const a = prev.regexps[i]!;
+    const b = next.regexps[i]!;
+    if (a.find !== b.find || a.replace !== b.replace) return false;
+  }
+  return true;
 }
 
 function addEdge(
@@ -101,15 +265,6 @@ function portion(
   const life = Math.max(0, end - start);
   if (end <= snippetTimestamp) return life;
   return Math.max(0, Math.min(end, now) - Math.max(start, snippetTimestamp));
-}
-
-export function resolveParam(
-  model: RuleModel,
-  name: string,
-): ResolvedParam | null {
-  const resolved = walk(model, name, new Set(), 0);
-  if (!resolved || resolved.to === name) return null;
-  return resolved;
 }
 
 function walk(
@@ -170,7 +325,8 @@ function regexpEdges(model: RuleModel, name: string): EdgeAcc[] {
       const to = luaGsub(name, rule.find, rule.replace);
       if (!to || to === name) continue;
       const acc = grouped.get(to) ?? { from: name, to, weight: 0, revids: [] };
-      acc.weight += 1;
+      // Match pair edges: weight by how long the era lasted, not by row count.
+      acc.weight += info.weight;
       acc.revids.push(revid);
       grouped.set(to, acc);
     }
@@ -178,58 +334,11 @@ function regexpEdges(model: RuleModel, name: string): EdgeAcc[] {
   return [...grouped.values()];
 }
 
-export function citeRevision(
-  model: RuleModel,
-  pairs: readonly string[],
-): { revid: number; timestamp: string } | null {
-  if (pairs.length === 0) return null;
-  const revisions = [...model.byRevid.entries()].sort((a, b) => b[0] - a[0]);
-  const has = (info: RevisionInfo, pair: string): boolean => {
-    if (info.pairs.has(pair)) return true;
-    const split = pair.split("\0");
-    const from = split[0] ?? "";
-    const to = split[1] ?? "";
-    return info.regexps.some(
-      (rule) =>
-        luaMatch(from, rule.find) &&
-        luaGsub(from, rule.find, rule.replace) === to,
-    );
-  };
-  for (const [revid, info] of revisions) {
-    if (pairs.every((pair) => has(info, pair)))
-      return { revid, timestamp: info.timestamp };
-  }
-  for (const [revid, info] of revisions) {
-    if (pairs.some((pair) => has(info, pair)))
-      return { revid, timestamp: info.timestamp };
-  }
-  return null;
-}
-
-function parseRevision(content: string): {
-  pairs: DeclaredPair[];
-  regexps: Array<{ find: string; replace: string }>;
-} {
-  const pairs: DeclaredPair[] = [];
-  const regexps: Array<{ find: string; replace: string }> = [];
-  for (const template of findTemplates(maskProtected(content))) {
-    if (!isDeprecatedInvoke(template.name)) continue;
-    const parsed = invokeRules(content.slice(template.start, template.end));
-    pairs.push(...parsed.pairs);
-    regexps.push(...parsed.regexps);
-  }
-  pairs.push(...templateDataAliases(content));
-  return { pairs, regexps };
-}
-
-function invokeRules(raw: string): {
-  pairs: DeclaredPair[];
-  regexps: Array<{ find: string; replace: string }>;
-} {
+function invokeRules(raw: string): ParsedRules {
   const inner = raw.slice(2, -2);
   const parts = splitPipes(inner);
   const pairs: DeclaredPair[] = [];
-  const regexps: Array<{ find: string; replace: string }> = [];
+  const regexps: RegexpRule[] = [];
   for (let i = 1; i < parts.length; i++) {
     const match = /^(\s*)([^=|]+?)(\s*)=(.*)$/s.exec(parts[i] ?? "");
     if (!match) continue;
@@ -272,28 +381,6 @@ function templateDataAliases(content: string): DeclaredPair[] {
   return pairs;
 }
 
-function legalNames(content: string): Set<string> {
-  const names = new Set<string>();
-  const data = templateData(content);
-  if (data?.params && typeof data.params === "object") {
-    for (const [key, spec] of Object.entries(
-      data.params as Record<string, { aliases?: unknown }>,
-    )) {
-      if (key) names.add(key);
-      if (!Array.isArray(spec?.aliases)) continue;
-      for (const alias of spec.aliases)
-        if (typeof alias === "string" && alias) names.add(alias);
-    }
-  }
-  for (const match of maskProtected(content).matchAll(
-    /\{\{\{\s*([^{}|]+?)\s*(?:\||\}\})/g,
-  )) {
-    const name = match[1]?.trim();
-    if (name) names.add(name);
-  }
-  return names;
-}
-
 function templateData(content: string): { params?: unknown } | null {
   const match = /<templatedata>([\s\S]*?)<\/templatedata>/i.exec(content);
   if (!match?.[1]) return null;
@@ -308,6 +395,26 @@ function isDeprecatedInvoke(name: string): boolean {
   return INVOKE_NAMES.has(
     name.trim().toLowerCase().replace(/_/g, " ").replace(/\s+/g, " "),
   );
+}
+
+function protectedRanges(text: string): Array<[number, number]> {
+  const ranges: Array<[number, number]> = [];
+  PROTECTED.lastIndex = 0;
+  for (const match of text.matchAll(PROTECTED)) {
+    if (match.index == null) continue;
+    ranges.push([match.index, match.index + match[0].length]);
+  }
+  return ranges;
+}
+
+function rangeBlocked(
+  index: number,
+  skip: ReadonlyArray<[number, number]>,
+): boolean {
+  for (const [start, end] of skip) {
+    if (index >= start && index < end) return true;
+  }
+  return false;
 }
 
 function splitPipes(inner: string): string[] {
@@ -350,13 +457,6 @@ function splitPipes(inner: string): string[] {
   }
   parts.push(buf);
   return parts;
-}
-
-function maskProtected(text: string): string {
-  return text.replace(
-    /<(nowiki|noinclude)\b[^>]*>([\s\S]*?)<\/\1\s*>/gi,
-    (full) => " ".repeat(full.length),
-  );
 }
 
 function editDistance(a: string, b: string): number {
