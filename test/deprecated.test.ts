@@ -5,7 +5,13 @@ import {
   type SnippetComment,
   type TemplateRevision,
 } from "../deprecated/refresh.ts";
-import { compactHistory, hasRuleMachinery, parseRevision } from "../deprecated/rules.ts";
+import {
+  compactHistory,
+  hasRuleMachinery,
+  legalNames,
+  parseRevision,
+} from "../deprecated/rules.ts";
+import { findTemplates, templatePageTitle } from "../deprecated/wikitext.ts";
 
 const body = (rules: string) =>
   `<includeonly>{{#invoke:Check for deprecated parameters|check\n${rules}\n}}</includeonly>\n{{{fname1|}}}\n`;
@@ -521,6 +527,55 @@ describe("history cache", () => {
     } finally {
       globalThis.fetch = original;
     }
+  });
+});
+
+describe("template names", () => {
+  it("ignores HTML comments between the name and the first parameter", () => {
+    const [span] = findTemplates(
+      "{{Infobox settlement\n<!--See the Table at Infobox Settlement for all fields-->\n<!-- Basic info -->\n|name = X\n}}",
+    );
+    expect(span!.name).toBe("Infobox settlement");
+    expect(templatePageTitle(span!.name)).toBe("Template:Infobox settlement");
+  });
+});
+
+describe("legal names from Check for unknown parameters", () => {
+  // Shape of Template:Infobox settlement after 2026-10-11: pushpin params go
+  // straight to Module:Location map and never appear as {{{name}}}.
+  const tip =
+    "{{#invoke:Location map|infobox_pushpin_map}}{{{type|}}}<!--\n-->" +
+    "{{#invoke:Check for unknown parameters|check|unknown=x|preview = y|" +
+    " ignoreblank=y | pushpin_map_args=y | alt <!-- c --> | name\n| type}}";
+
+  it("adds the positional list and the pushpin_map_args names", () => {
+    const legal = legalNames(tip);
+    for (const name of ["alt", "name", "type", "pushpin_caption", "pushpin_alt"])
+      expect(legal.has(name)).toBe(true);
+    for (const name of ["unknown", "preview", "ignoreblank", "pushpin_map_args"])
+      expect(legal.has(name)).toBe(false);
+    expect(legal.has("mapframe-caption")).toBe(false);
+  });
+
+  it("renames to a target only the module knows about", async () => {
+    const result = await refreshDeprecatedParameters(
+      "{{Infobox settlement\n<!-- see doc -->\n| pushpin_map_caption = Location in Lebanon\n| settlement_type = Village\n}}",
+      [],
+      "2026-09-15T00:00:00Z",
+      async () => [
+        {
+          revid: 1,
+          timestamp: "2026-09-12T03:24:00Z",
+          content:
+            "{{{pushpin_map_caption|}}}{{{settlement_type|}}}" +
+            body("| settlement_type = type\n| pushpin_map_caption = pushpin_caption"),
+        },
+        { revid: 2, timestamp: "2026-10-11T22:40:00Z", content: tip },
+      ],
+    );
+    expect(result.text).toBe(
+      "{{Infobox settlement\n<!-- see doc -->\n| pushpin_caption = Location in Lebanon\n| type = Village\n}}",
+    );
   });
 });
 
