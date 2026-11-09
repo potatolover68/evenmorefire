@@ -155,7 +155,9 @@ function describeTemplate(
     }
   }
   parts.push({ text: inner.slice(bufStart), start: innerBase + bufStart });
-  const name = (parts[0]?.text ?? "").trim();
+  // `{{Infobox settlement\n<!-- see the doc -->\n| ...` is common; the comment
+  // is not part of the name.
+  const name = (parts[0]?.text ?? "").replace(/<!--[\s\S]*?(?:-->|$)/g, "").trim();
   if (!name) return null;
   const params: ParamSpan[] = [];
   for (let i = 1; i < parts.length; i++) {

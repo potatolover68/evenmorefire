@@ -47,6 +47,38 @@ const INVOKE_NAMES = new Set([
   "#invoke:check for deprecated parameters",
   "#invoke:module:check for deprecated parameters",
 ]);
+const UNKNOWN_INVOKE_NAMES = new Set([
+  "#invoke:check for unknown parameters",
+  "#invoke:module:check for unknown parameters",
+]);
+/**
+ * Names Module:Check for unknown parameters adds for `pushpin_map_args` and
+ * `mapframe_args`. Templates that hand these to Module:Location map or
+ * Module:Infobox mapframe never mention them as `{{{name}}}`.
+ */
+const PUSHPIN_MAP_PARAMS = [
+  "coordinates", "pushpin_caption", "pushpin_relief", "pushpin_label",
+  "pushpin_label_position", "pushpin_label_size", "pushpin_map", "pushpin_mark",
+  "pushpin_mark_size", "pushpin_alt", "pushpin_background", "pushpin_map_size",
+];
+const MAPFRAME_PARAMS = [
+  "coordinates", "id", "qid", "mapframe", "mapframe-area_km2",
+  "mapframe-area_mi2", "mapframe-caption", "mapframe-coord",
+  "mapframe-coordinates", "mapframe-custom", "mapframe-frame-coord",
+  "mapframe-frame-coordinates", "mapframe-frame-height", "mapframe-frame-width",
+  "mapframe-geomask", "mapframe-geomask-fill", "mapframe-geomask-fill-opacity",
+  "mapframe-geomask-stroke-color", "mapframe-geomask-stroke-colour",
+  "mapframe-geomask-stroke-width", "mapframe-height", "mapframe-id",
+  "mapframe-length_km", "mapframe-length_mi", "mapframe-line",
+  "mapframe-line-stroke-color", "mapframe-line-stroke-colour",
+  "mapframe-marker", "mapframe-marker-color", "mapframe-marker-colour",
+  "mapframe-point", "mapframe-population", "mapframe-shape",
+  "mapframe-shape-fill", "mapframe-shape-fill-opacity",
+  "mapframe-shape-stroke-color", "mapframe-shape-stroke-colour",
+  "mapframe-stroke-color", "mapframe-stroke-colour", "mapframe-stroke-width",
+  "mapframe-switcher", "mapframe-type", "mapframe-width", "mapframe-wikidata",
+  "mapframe-zoom",
+];
 /** nowiki, noinclude, and HTML comments — ranges to skip while scanning. */
 const PROTECTED =
   /<(nowiki|noinclude)\b[^>]*>[\s\S]*?<\/\1\s*>|<!--[\s\S]*?-->/gi;
@@ -95,6 +127,37 @@ export function legalNames(content: string): Set<string> {
     if (match.index != null && rangeBlocked(match.index, skip)) continue;
     const name = match[1]?.trim();
     if (name) names.add(name);
+  }
+  for (const name of unknownCheckNames(content, skip)) names.add(name);
+  return names;
+}
+
+/**
+ * The template's own list of accepted parameters, from
+ * `{{#invoke:Check for unknown parameters|check|a|b|...}}`.
+ */
+function unknownCheckNames(
+  content: string,
+  skip: ReadonlyArray<[number, number]>,
+): string[] {
+  const names: string[] = [];
+  for (const template of findTemplates(content)) {
+    if (!invokeNamed(template.name, UNKNOWN_INVOKE_NAMES)) continue;
+    if (rangeBlocked(template.start, skip)) continue;
+    const parts = splitPipes(content.slice(template.start + 2, template.end - 2));
+    for (let i = 2; i < parts.length; i++) {
+      const part = (parts[i] ?? "").replace(/<!--[\s\S]*?-->/g, "");
+      const eq = part.indexOf("=");
+      if (eq < 0) {
+        const name = part.trim();
+        if (name) names.push(name);
+        continue;
+      }
+      const key = part.slice(0, eq).trim().toLowerCase();
+      const on = /\S/.test(part.slice(eq + 1));
+      if (key === "pushpin_map_args" && on) names.push(...PUSHPIN_MAP_PARAMS);
+      if (key === "mapframe_args" && on) names.push(...MAPFRAME_PARAMS);
+    }
   }
   return names;
 }
@@ -392,8 +455,17 @@ function templateData(content: string): { params?: unknown } | null {
 }
 
 function isDeprecatedInvoke(name: string): boolean {
-  return INVOKE_NAMES.has(
-    name.trim().toLowerCase().replace(/_/g, " ").replace(/\s+/g, " "),
+  return invokeNamed(name, INVOKE_NAMES);
+}
+
+function invokeNamed(name: string, names: ReadonlySet<string>): boolean {
+  return names.has(
+    name
+      .trim()
+      .toLowerCase()
+      .replace(/_/g, " ")
+      .replace(/\s+/g, " ")
+      .replace(/^#invoke:\s*/, "#invoke:"),
   );
 }
 
