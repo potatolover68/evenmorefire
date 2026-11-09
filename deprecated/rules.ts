@@ -311,9 +311,11 @@ function walk(
 function outgoingEdges(model: RuleModel, name: string): EdgeAcc[] {
   const extra = regexpEdges(model, name);
   return [...model.edges.filter((edge) => edge.from === name), ...extra].sort(
-    (a, b) =>
-      b.weight - a.weight ||
-      Math.max(...b.revids, 0) - Math.max(...a.revids, 0),
+    (a, b) => {
+      const aLatest = Math.max(...a.revids, 0);
+      const bLatest = Math.max(...b.revids, 0);
+      return bLatest - aLatest || b.weight - a.weight;
+    },
   );
 }
 
