@@ -402,6 +402,128 @@ describe("API query shapes", () => {
   });
 });
 
+describe("history cache", () => {
+  // Tip no longer invokes Check for deprecated parameters (the old names were
+  // cleaned up), but an earlier revision declared the pushpin renames.
+  const tip = "{{{pushpin_caption|}}}\n{{{pushpin_alt|}}}\n{{{name|}}}";
+  const ruled = body(
+    "| pushpin_map_alt = pushpin_alt\n| pushpin_map_caption = pushpin_caption",
+  );
+  const older = [
+    { revid: 300, timestamp: "2026-10-01T00:00:00Z", content: tip },
+    { revid: 250, timestamp: "2026-08-01T00:00:00Z", content: tip },
+    { revid: 200, timestamp: "2025-06-01T00:00:00Z", content: ruled },
+    { revid: 100, timestamp: "2024-01-01T00:00:00Z", content: tip },
+  ];
+
+  function mockWiki(calls: URLSearchParams[]): typeof fetch {
+    return (async (input: unknown) => {
+      const params = new URL(input as string).searchParams;
+      calls.push(params);
+      const title = "Template:Infobox settlement";
+      const isHistory = params.get("rvdir") === "older";
+      const revisions = (isHistory ? older : older.slice(0, 1)).map((rev) => ({
+        revid: rev.revid,
+        timestamp: rev.timestamp,
+        slots: { main: { content: rev.content } },
+      }));
+      return {
+        ok: true,
+        json: async () => ({ query: { pages: [{ title, revisions }] } }),
+      } as unknown as Response;
+    }) as unknown as typeof fetch;
+  }
+
+  it("does not let a clean page poison the cache for a later deprecated one", async () => {
+    clearTemplateRevisionCache();
+    const calls: URLSearchParams[] = [];
+    const original = globalThis.fetch;
+    globalThis.fetch = mockWiki(calls);
+    const options = { apiRoot: "https://example.org/w/api.php" };
+    try {
+      // First article only uses current names: history lookup is skipped.
+      const clean = await refreshDeprecatedParameters(
+        "{{Infobox settlement|name=Foo|pushpin_caption=Bar}}",
+        [],
+        "2026-09-01T00:00:00Z",
+        options,
+      );
+      expect(clean.text).toBe("{{Infobox settlement|name=Foo|pushpin_caption=Bar}}");
+      // Second article still carries the formerly deprecated names.
+      const stale = await refreshDeprecatedParameters(
+        "{{Infobox settlement|pushpin_map_caption=Bar|pushpin_map_alt=Baz}}",
+        [],
+        "2026-09-01T00:00:00Z",
+        options,
+      );
+      expect(stale.text).toBe(
+        "{{Infobox settlement|pushpin_caption=Bar|pushpin_alt=Baz}}",
+      );
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+
+  it("refetches when a cached history does not reach back to an older snippet", async () => {
+    clearTemplateRevisionCache();
+    const calls: URLSearchParams[] = [];
+    const original = globalThis.fetch;
+    let served = 0;
+    // The first history page ends with a continuation; the loader stops
+    // there because it is already past the first snippet.
+    globalThis.fetch = (async (input: unknown) => {
+      const params = new URL(input as string).searchParams;
+      calls.push(params);
+      const title = "Template:Infobox settlement";
+      const isHistory = params.get("rvdir") === "older";
+      let list = older.slice(0, 1);
+      if (isHistory) {
+        served += 1;
+        list = served === 1 ? older.slice(0, 2) : older;
+      }
+      return {
+        ok: true,
+        json: async () => ({
+          query: {
+            pages: [
+              {
+                title,
+                revisions: list.map((rev) => ({
+                  revid: rev.revid,
+                  timestamp: rev.timestamp,
+                  slots: { main: { content: rev.content } },
+                })),
+              },
+            ],
+          },
+          ...(isHistory && served === 1 ? { continue: { rvcontinue: "x" } } : {}),
+        }),
+      } as unknown as Response;
+    }) as unknown as typeof fetch;
+    const options = { apiRoot: "https://example.org/w/api.php" };
+    try {
+      // A recent snippet: the walk stops at revid 250, the first revision
+      // older than the snippet, and never sees the rule era (revid 200).
+      await refreshDeprecatedParameters(
+        "{{Infobox settlement|unknown=1}}",
+        [],
+        "2026-09-01T00:00:00Z",
+        options,
+      );
+      // An older snippet must not reuse that shallow history.
+      const stale = await refreshDeprecatedParameters(
+        "{{Infobox settlement|pushpin_map_caption=Bar}}",
+        [],
+        "2025-01-01T00:00:00Z",
+        options,
+      );
+      expect(stale.text).toBe("{{Infobox settlement|pushpin_caption=Bar}}");
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+});
+
 describe("cache control", () => {
   it("clearTemplateRevisionCache is safe to call repeatedly", () => {
     clearTemplateRevisionCache();

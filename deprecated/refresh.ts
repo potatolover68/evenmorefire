@@ -8,6 +8,7 @@ import {
   weightModel,
 } from "./rules.ts";
 import type {
+  HistoryCoverage,
   ParsedRevision,
   SnippetComment,
   TemplateHistory,
@@ -56,7 +57,8 @@ const DEFAULT_API = "https://en.wikipedia.org/w/api.php";
 const TITLE_BATCH = 50;
 const HISTORY_CONCURRENCY = 4;
 const CACHE_LIMIT = 64;
-const STORAGE_PREFIX = "emf-dep-v4:";
+// v5: v4 could hold tip-only "clean" entries that hid every historical rule.
+const STORAGE_PREFIX = "emf-dep-v5:";
 /** Maximum backwards revisions to examine for a single template. */
 const MAX_BACKWARDS_REVISIONS = 500;
 
@@ -229,28 +231,21 @@ async function loadHistories(
   for (const title of titles) {
     const latest = latestByTitle.get(title);
     if (!latest) {
-      const empty: TemplateHistory = {
+      out.set(title, {
         title,
         tipRevid: null,
         legal: new Set(),
         revisions: [],
-      };
-      cacheSet(apiRoot, title, empty);
-      out.set(title, empty);
+      });
       continue;
     }
 
-    // 2. Check persistent/in-memory cache for valid entry matching live tip.
-    const cached = cacheGet(apiRoot, title);
-    if (cached && cached.tipRevid === latest.revid) {
-      out.set(title, cached);
-      continue;
-    }
-
-    // 3. PARAMETER ELIGIBILITY FILTER:
+    // 2. PARAMETER ELIGIBILITY FILTER:
     // If all parameters in the restored wikitext are already recognized by the
     // template's current legal names, and the tip has no active deprecation rules,
     // none of the parameters on the page can be deprecated. Skip history!
+    // The result is specific to this page's parameters, so it is never cached:
+    // another page using the same template may need the full history.
     const legal = legalNames(latest.content);
     const tipRules = parseRevision(latest.content);
     const hasRules = hasRuleMachinery(tipRules);
@@ -259,14 +254,20 @@ async function loadHistories(
       invoked != null && [...invoked].some((p) => !legal.has(p));
 
     if (!hasUnknownParam && !hasRules) {
-      const clean: TemplateHistory = {
+      out.set(title, {
         title: latest.title,
         tipRevid: latest.revid,
         legal,
         revisions: [],
-      };
-      cacheSet(apiRoot, title, clean);
-      out.set(title, clean);
+      });
+      continue;
+    }
+
+    // 3. Reuse a cached history only if it matches the live tip and reaches
+    // back far enough for this snippet.
+    const cached = cacheGet(apiRoot, title);
+    if (cached && cached.tipRevid === latest.revid && covers(cached, snippetMs)) {
+      out.set(title, cached);
       continue;
     }
 
@@ -290,12 +291,20 @@ async function loadTemplateHistory(
 ): Promise<TemplateHistory> {
   const key = cacheKey(apiRoot, title);
   const hit = historyCache.get(key);
-  if (hit && hit.history.tipRevid === latest.revid) {
+  if (
+    hit &&
+    hit.history.tipRevid === latest.revid &&
+    covers(hit.history, snippetMs)
+  ) {
     hit.used = ++cacheClock;
     return hit.history;
   }
   const pending = inflight.get(key);
-  if (pending) return pending;
+  if (pending) {
+    const shared = await pending;
+    if (shared.tipRevid === latest.revid && covers(shared, snippetMs))
+      return shared;
+  }
 
   const load = (async () => {
     try {
@@ -337,6 +346,7 @@ async function streamCompactHistory(
   let resolvedTitle = latest.title || title;
   let rvcontinue: string | undefined;
   let rawCount = 1;
+  let stoppedAtSnippet = false;
 
   for (let page = 0; page < 20; page++) {
     const params = queryParams({
@@ -385,7 +395,9 @@ async function streamCompactHistory(
         : undefined;
 
     // Stop if we reached before the snippetTimestamp or exhausted history.
-    if (!rvcontinue || pastSnippet || rawCount >= MAX_BACKWARDS_REVISIONS) {
+    if (!rvcontinue || rawCount >= MAX_BACKWARDS_REVISIONS) break;
+    if (pastSnippet) {
+      stoppedAtSnippet = true;
       break;
     }
   }
@@ -399,7 +411,18 @@ async function streamCompactHistory(
     ...compact,
     tipRevid: latest.revid,
     legal: legalNames(latest.content),
+    coverage: {
+      oldest: rawRevisions[0]?.timestamp ?? latest.timestamp,
+      exhausted: !stoppedAtSnippet,
+    },
   };
+}
+
+/** True when a fetched history reaches back past `snippetMs`. */
+function covers(history: TemplateHistory, snippetMs: number): boolean {
+  const coverage = history.coverage;
+  if (!coverage) return false;
+  return coverage.exhausted || Date.parse(coverage.oldest) < snippetMs;
 }
 
 async function fetchLatestBatch(
@@ -571,6 +594,7 @@ interface StoredHistory {
   tipRevid: number | null;
   legal: string[];
   revisions: ParsedRevision[];
+  coverage?: HistoryCoverage;
 }
 
 function readStorageCache(key: string): TemplateHistory | null {
@@ -588,6 +612,7 @@ function readStorageCache(key: string): TemplateHistory | null {
       tipRevid: parsed.tipRevid ?? null,
       legal: new Set(parsed.legal ?? []),
       revisions: parsed.revisions,
+      coverage: parsed.coverage,
     };
   } catch {
     return null;
@@ -603,6 +628,7 @@ function writeStorageCache(key: string, history: TemplateHistory): void {
       tipRevid: history.tipRevid,
       legal: [...history.legal],
       revisions: [...history.revisions],
+      coverage: history.coverage,
     };
     storage.setItem(STORAGE_PREFIX + key, JSON.stringify(stored));
   } catch {

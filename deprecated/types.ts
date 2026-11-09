@@ -43,4 +43,16 @@ export interface TemplateHistory {
   tipRevid: number | null;
   legal: ReadonlySet<string>;
   revisions: readonly ParsedRevision[];
+  /**
+   * How far back `revisions` reaches; only histories with coverage may be
+   * reused from the cache. Absent when history was never walked.
+   */
+  coverage?: HistoryCoverage;
+}
+
+export interface HistoryCoverage {
+  /** Timestamp of the oldest revision fetched. */
+  oldest: string;
+  /** True when the walk ran out of history or hit its cap, not the snippet. */
+  exhausted: boolean;
 }
