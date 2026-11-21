@@ -32,9 +32,34 @@ export function passRefs(
 
   const splices: Splice[] = [];
   const used = new Set<number>();
+  const emptyDefs = new Set<RefHit>();
+
+  for (const ref of scan.refs) {
+    if (ref.kind !== "def") continue;
+    const located = locate(ref, indexOf);
+    if (!located || overlaps(used, located)) continue;
+    if (!isEmptyRef(ref.contentTokenIds, indexOf, items)) continue;
+    emptyDefs.add(ref);
+    mark(used, located);
+    splices.push({
+      start: located[0],
+      end: located[1],
+      insert: [],
+      notes: [
+        {
+          action: "remove-orphan-ref",
+          details: ["empty"],
+          start: 0,
+          end: 0,
+        },
+      ],
+    });
+  }
 
   for (const [name, refs] of byName) {
-    const defs = refs.filter((ref) => ref.kind === "def");
+    const defs = refs.filter(
+      (ref) => ref.kind === "def" && !emptyDefs.has(ref),
+    );
     const uses = refs.filter((ref) => ref.kind === "use");
     if (uses.length > 0 && defs.length === 0) {
       const saved = findDefinition(name, analysis, tainted, options);
@@ -196,4 +221,17 @@ function overlaps(used: Set<number>, range: [number, number]): boolean {
 
 function mark(used: Set<number>, range: [number, number]) {
   for (let i = range[0]; i < range[1]; i++) used.add(i);
+}
+
+function isEmptyRef(
+  contentTokenIds: readonly number[],
+  indexOf: ReadonlyMap<number, number>,
+  items: readonly StreamItem[],
+): boolean {
+  for (const id of contentTokenIds) {
+    const at = indexOf.get(id);
+    if (at === undefined) continue;
+    if (items[at]!.text.trim() !== "") return false;
+  }
+  return true;
 }

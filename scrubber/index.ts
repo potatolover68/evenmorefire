@@ -1,3 +1,4 @@
+import { diffLines } from "diff";
 import { assemble } from "./assemble";
 import { passDerivative } from "./pass-derivative";
 import { passMarkup } from "./pass-markup";
@@ -6,7 +7,13 @@ import { passSections } from "./pass-sections";
 import { passWhitespace } from "./pass-whitespace";
 import { applyRestoredSections } from "./post-restore";
 import { analyze, type Analysis } from "./provenance";
-import { renderStream, renderText, sortExplanations } from "./render";
+import {
+  lineStartIndex,
+  renderStream,
+  renderText,
+  sortExplanations,
+  toPos,
+} from "./render";
 import {
   isPresent,
   isRevisionHidden,
@@ -14,7 +21,11 @@ import {
   trivialRollback,
   type TrivialRollback,
 } from "./replay";
-import { describeSections, type SectionSpan } from "./sections";
+import {
+  describeRestoredRanges,
+  describeSections,
+  type SectionSpan,
+} from "./sections";
 import { clearParagraphCache, normalizeNewlines } from "./split";
 import { mapStrippedLine, stripNakedTables } from "./tables";
 import {
@@ -23,6 +34,7 @@ import {
   type Note,
   type OnRestoredSection,
   type Options,
+  type Pos,
   type Revision,
 } from "./types";
 
@@ -172,6 +184,12 @@ export function scrubRollback(
 ): ScrubResult | Promise<ScrubResult> {
   const warnings = collectWarnings(revisions, taintedRevids);
   const explanations: Explanation[] = [];
+  const latest = [...revisions]
+    .reverse()
+    .find((revision) => revision.content != null);
+  const removed = latest?.content
+    ? removedLatestSpan(content, latest.content)
+    : null;
   if (rollback.emptied) {
     explanations.push({ action: "all-tainted", start: [0, 0], end: [0, 0] });
   } else {
@@ -185,6 +203,7 @@ export function scrubRollback(
         start: [0, 0],
         end: [0, 0],
         details,
+        ...(removed ?? {}),
       });
     }
   }
@@ -197,10 +216,83 @@ export function scrubRollback(
     });
   }
   explanations.push(...warningExplanations(warnings));
-  return finish(options, {
-    content,
-    explanations: sortExplanations(explanations),
-  });
+  const keptRev = revisions.find((item) => item.revid === rollback.keptRevid);
+  const restoredAt = keptRev?.timestamp ?? null;
+  const spans =
+    options?.onRestoredSection && latest?.content
+      ? describeRestoredRanges(
+          content,
+          restoredRangesInKept(latest.content, content, restoredAt),
+        )
+      : [];
+  return finish(
+    options,
+    {
+      content,
+      explanations: sortExplanations(explanations),
+    },
+    spans,
+  );
+}
+
+/** Character ranges in `kept` that a rollback reintroduced relative to `latest`. */
+function restoredRangesInKept(
+  latest: string,
+  kept: string,
+  restoredAt: string | null,
+): Array<{ start: number; end: number; at: string | null }> {
+  const before = normalizeNewlines(latest);
+  const after = normalizeNewlines(kept);
+  if (before === after) return [];
+  const changes = diffLines(
+    before.endsWith("\n") || before.length === 0 ? before : `${before}\n`,
+    after.endsWith("\n") || after.length === 0 ? after : `${after}\n`,
+  );
+  const ranges: Array<{ start: number; end: number; at: string | null }> = [];
+  let offset = 0;
+  for (const change of changes) {
+    const length = change.value.length;
+    if (change.added) {
+      const end = Math.min(offset + length, after.length);
+      if (end > offset) ranges.push({ start: offset, end, at: restoredAt });
+    }
+    if (!change.removed) offset += length;
+  }
+  return ranges;
+}
+
+/** Line span in the latest text of material a trivial rollback drops. */
+function removedLatestSpan(
+  kept: string,
+  latest: string,
+): { latestStart: Pos; latestEnd: Pos } | null {
+  const before = normalizeNewlines(kept);
+  const after = normalizeNewlines(latest);
+  if (before === after) return null;
+  const lineStarts = lineStartIndex(after);
+  const changes = diffLines(
+    before.endsWith("\n") || before.length === 0 ? before : `${before}\n`,
+    after.endsWith("\n") || after.length === 0 ? after : `${after}\n`,
+  );
+  let offset = 0;
+  let start = Number.POSITIVE_INFINITY;
+  let end = -1;
+  for (const change of changes) {
+    const length = change.value.length;
+    if (change.added) {
+      start = Math.min(start, offset);
+      end = Math.max(end, offset + length);
+    }
+    if (!change.removed) offset += length;
+  }
+  if (end < 0 || !Number.isFinite(start)) return null;
+  const last = Math.min(end, after.length);
+  const first = Math.min(start, last);
+  if (first >= last && after.length > 0) return null;
+  return {
+    latestStart: toPos(first, lineStarts),
+    latestEnd: toPos(Math.max(first, last - (last > first ? 1 : 0)), lineStarts),
+  };
 }
 
 /**

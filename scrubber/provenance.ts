@@ -16,7 +16,12 @@ import {
   type SplitSentence,
 } from "./split";
 import { scanTokens } from "./wikiscan";
-import { insideSpan, nonProseSpans, templateSpans } from "./nonprose";
+import {
+  insideSpan,
+  nonProseSpans,
+  refDelimiterSpans,
+  templateSpans,
+} from "./nonprose";
 import type {
   Hunk,
   ParagraphObj,
@@ -409,7 +414,9 @@ export function openAnalysis(
     gen++;
     const text = normalizeNewlines(revision.content);
     activeSpans = skipNonProse ? nonProseSpans(text) : null;
-    templateRanges = untaintedTemplates ? templateSpans(text) : null;
+    templateRanges = untaintedTemplates
+      ? mergeRanges(templateSpans(text), refDelimiterSpans(text))
+      : null;
     currentRevid = revision.revid;
     prevGapById = prev ? gapMap(prev.paragraphs, gapsOf) : new Map();
     if (prev && tryPositional(text, revision.revid)) return;
@@ -1101,6 +1108,13 @@ function flatten(paragraphs: readonly ParagraphObj[]): Token[] {
     for (const sentence of paragraph.sentences) out.push(...sentence.tokens);
   }
   return out;
+}
+
+function mergeRanges(
+  left: Array<[number, number]>,
+  right: Array<[number, number]>,
+): Array<[number, number]> {
+  return [...left, ...right].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
 }
 
 function groupBy<T>(

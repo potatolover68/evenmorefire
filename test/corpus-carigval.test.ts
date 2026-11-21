@@ -6,7 +6,7 @@ const enabled = process.env.EMF_CORPUS === "1";
 const USER = "Carigval.97";
 const START = "2026-08-31T23:59:59Z";
 const END = "2026-07-01T00:00:00Z";
-const AGENT = "evenmorefire-scrubber/0.0 (local markup corpus)";
+const AGENT = "evenmorefire-scrubber/0.0 (local markup corpus; contact msk (at) msk (dot) wtf )";
 
 interface Contrib {
   revid: number;

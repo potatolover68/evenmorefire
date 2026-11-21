@@ -8,6 +8,53 @@ export function templateSpans(text: string): Array<[number, number]> {
   return scanSpans(text, true);
 }
 
+/**
+ * Only the `<ref ...>` / `</ref>` tag ranges. Kept with untainted templates so a
+ * citation is not left naked when its wrappers would otherwise drop.
+ */
+export function refDelimiterSpans(text: string): Array<[number, number]> {
+  const spans: Array<[number, number]> = [];
+  const stack: number[] = [];
+  let i = 0;
+  while (i < text.length) {
+    if (text.startsWith("<!--", i)) {
+      const end = text.indexOf("-->", i + 4);
+      i = end < 0 ? text.length : end + 3;
+      continue;
+    }
+    const nowiki = /^<nowiki\b[^>]*>/i.exec(text.slice(i));
+    if (nowiki) {
+      const close = text.slice(i + nowiki[0].length).search(/<\/nowiki\s*>/i);
+      if (close < 0) break;
+      const closeMatch = /^<\/nowiki\s*>/i.exec(
+        text.slice(i + nowiki[0].length + close),
+      );
+      i =
+        i +
+        nowiki[0].length +
+        close +
+        (closeMatch ? closeMatch[0].length : 0);
+      continue;
+    }
+    const refClose = /^<\/ref\s*>/i.exec(text.slice(i));
+    if (refClose && stack.length > 0) {
+      stack.pop();
+      spans.push([i, i + refClose[0].length]);
+      i += refClose[0].length;
+      continue;
+    }
+    const refOpen = /^<ref\b[^>]*>/i.exec(text.slice(i));
+    if (refOpen) {
+      spans.push([i, i + refOpen[0].length]);
+      if (!refOpen[0].endsWith("/>")) stack.push(i);
+      i += refOpen[0].length;
+      continue;
+    }
+    i += 1;
+  }
+  return spans;
+}
+
 function scanSpans(
   text: string,
   templatesOnly: boolean,

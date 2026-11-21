@@ -46,6 +46,17 @@ export function describeSections(
   return splitHeadings(content, hits);
 }
 
+/** Mark sections that contain text a trivial rollback put back. */
+export function describeRestoredRanges(
+  content: string,
+  ranges: readonly { start: number; end: number; at: string | null }[],
+): SectionSpan[] {
+  return splitHeadings(
+    content,
+    ranges.filter((range) => range.end > range.start),
+  );
+}
+
 function splitHeadings(
   content: string,
   hits: readonly RestoredHit[],
