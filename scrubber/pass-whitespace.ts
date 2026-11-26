@@ -19,8 +19,11 @@ export function passWhitespace(
   for (let i = 0; i < next.length; i++) {
     const item = next[i]!;
     const following = next[i + 1];
-    if (following && !protectedGap[i] && /^[.,;:)]$/.test(following.text)) {
+    if (!following || protectedGap[i]) continue;
+    if (/^[.,;:)]$/.test(following.text)) {
       item.gapAfter = item.gapAfter.replace(/ +$/g, "");
+    } else if (!/\s/.test(item.gapAfter) && needsSeam(next, i)) {
+      item.gapAfter += " ";
     }
   }
   const trailing = finalText.match(/\s*$/)?.[0] ?? "";
@@ -125,14 +128,8 @@ function fragmentFlags(
       const start = indexes[0]!;
       const end = indexes[indexes.length - 1]! + 1;
       const slice = items.slice(start, end);
-      if (
-        slice.some(
-          (item) =>
-            item.text === "<" || item.text === "{{" || item.text === "[[",
-        )
-      ) {
-        continue;
-      }
+      const words = proseWords(slice);
+      if (words.length === 0) continue;
       const restored = slice.some((item) => item.restored);
       const firstFinal = slice
         .map((item) => item.finalIndex)
@@ -143,8 +140,7 @@ function fragmentFlags(
         firstFinal > 0 &&
         droppedFinalIds.has(finalTokens[firstFinal - 1]!.id);
       if (!restored && !followsDrop) continue;
-      const words = slice.filter((item) => /\p{L}/u.test(item.text));
-      const firstWord = words[0]?.text ?? "";
+      const firstWord = words[0]!;
       const surface = slice.map((item) => item.text).join("");
       const bare = surface.trim();
       const conjunction =
@@ -154,15 +150,142 @@ function fragmentFlags(
       const comma = bare.startsWith(",") || slice[0]?.text === ",";
       const missing =
         bare.length > 0 && /\p{L}/u.test(bare) && !/[.!?]$/.test(bare);
-      if (!conjunction && !missing && !relative && !comma) continue;
+      const lowercase = firstWord[0] !== firstWord[0]?.toUpperCase();
+      if (!conjunction && !missing && !relative && !comma && !lowercase) continue;
       notes.push({ action: "flag-fragment", start, end });
     }
   }
   return notes;
 }
 
+function needsSeam(items: readonly StreamItem[], index: number): boolean {
+  const left = items[index]?.text ?? "";
+  const right = items[index + 1]?.text ?? "";
+  if (!left || !right) return false;
+  if (left.endsWith("'") && right.startsWith("'")) return false;
+  if (/(?:\]\]|\}\})$/.test(left) && /^(?:s|es|ed|ing|'s)$/i.test(right)) {
+    return false;
+  }
+  if (/^['"]$/.test(left) && /^\p{L}/u.test(right)) {
+    const before = beforeQuoteRun(items, index);
+    return (
+      !/\s/.test(before.gap) &&
+      /[\p{L}\p{N}\]\}>.!?]$/u.test(before.text)
+    );
+  }
+  const boundary = /[\p{L}\p{N}\]\}>]$/u.test(left);
+  const sentence = /[.!?]$/.test(left);
+  if (!boundary && !sentence) return false;
+  if (sentence) return /^[\p{L}\p{N}\[]/u.test(right);
+  return /^[\p{L}\p{N}\[{<]/u.test(right);
+}
+
+function beforeQuoteRun(
+  items: readonly StreamItem[],
+  index: number,
+): { text: string; gap: string } {
+  let at = index;
+  while (at >= 0 && /^['"]$/.test(items[at]?.text ?? "")) at -= 1;
+  if (at < 0) return { text: "", gap: "" };
+  return { text: items[at]!.text, gap: items[at]!.gapAfter };
+}
+
+function proseWords(items: readonly StreamItem[]): string[] {
+  const inside = protectedGaps(items);
+  const words: string[] = [];
+  for (let i = 0; i < items.length; i++) {
+    if (inside[i]) continue;
+    const text = items[i]!.text;
+    if (/^\p{L}/u.test(text)) words.push(text);
+  }
+  return words;
+}
+
 function proseKey(key: string): boolean {
   return !/^[{|=*#:!<]/.test(key);
+}
+
+const LIST_ONLY = /^(?:\s*[*#;:])+\s*$/;
+const MARKER_THEN_CATEGORY =
+  /^(\s*(?:[*#;:]\s*)+)((?:\[\[[Cc]ategory:[^\]]+\]\]\s*)+)$/;
+
+/** Drop lines that are only wiki list markers, and pull categories off a marker-only prefix. */
+export function stripEmptyListLines(
+  leading: string,
+  items: StreamItem[],
+  notes: Note[],
+): { leading: string; items: StreamItem[]; notes: Note[] } {
+  const next = items.map((item) => ({ ...item }));
+  const drop = new Array<boolean>(next.length).fill(false);
+  const spans = itemSpans(leading, next);
+  const text = renderJoined(leading, next);
+  let lineStart = 0;
+  for (let i = 0; i <= text.length; i++) {
+    if (i !== text.length && text[i] !== "\n") continue;
+    const line = text.slice(lineStart, i);
+    if (LIST_ONLY.test(line)) {
+      markLine(spans, lineStart, i, drop);
+    } else {
+      const marked = MARKER_THEN_CATEGORY.exec(line);
+      if (marked) markLine(spans, lineStart, lineStart + marked[1]!.length, drop);
+    }
+    lineStart = i + 1;
+  }
+  if (!drop.some(Boolean)) return { leading, items: next, notes };
+  const kept = next.filter((_, index) => !drop[index]);
+  const map = new Array<number>(next.length);
+  let at = 0;
+  for (let i = 0; i < next.length; i++) {
+    map[i] = at;
+    if (!drop[i]) at += 1;
+  }
+  const point = (index: number) => map[index] ?? kept.length;
+  const nextNotes = notes.flatMap((note) => {
+    if (note.end <= note.start) {
+      return [{ ...note, start: point(note.start), end: point(note.start) }];
+    }
+    let start = note.start;
+    while (start < note.end && drop[start]) start += 1;
+    let end = note.end;
+    while (end > start && drop[end - 1]) end -= 1;
+    if (start >= end) return [];
+    return [{ ...note, start: point(start), end: point(end - 1) + 1 }];
+  });
+  return { leading, items: kept, notes: nextNotes };
+}
+
+function itemSpans(
+  leading: string,
+  items: readonly StreamItem[],
+): Array<{ start: number; end: number }> {
+  const spans: Array<{ start: number; end: number }> = [];
+  let at = leading.length;
+  for (const item of items) {
+    const start = at;
+    at += item.text.length;
+    spans.push({ start, end: at });
+    at += item.gapAfter.length;
+  }
+  return spans;
+}
+
+function renderJoined(leading: string, items: readonly StreamItem[]): string {
+  let out = leading;
+  for (const item of items) out += item.text + item.gapAfter;
+  return out;
+}
+
+function markLine(
+  spans: readonly { start: number; end: number }[],
+  from: number,
+  to: number,
+  drop: boolean[],
+): void {
+  for (let i = 0; i < spans.length; i++) {
+    const span = spans[i]!;
+    if (span.end <= from || span.start >= to) continue;
+    if (span.start >= from && span.end <= to) drop[i] = true;
+  }
 }
 
 function dropFragments(

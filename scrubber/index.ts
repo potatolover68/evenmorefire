@@ -4,7 +4,7 @@ import { passDerivative } from "./pass-derivative";
 import { passMarkup } from "./pass-markup";
 import { passRefs } from "./pass-refs";
 import { passSections } from "./pass-sections";
-import { passWhitespace } from "./pass-whitespace";
+import { passWhitespace, stripEmptyListLines } from "./pass-whitespace";
 import { applyRestoredSections } from "./post-restore";
 import { analyze, type Analysis } from "./provenance";
 import {
@@ -362,6 +362,11 @@ export function scrubAnalysis(
     items = spaced.items;
     notes = spaced.notes;
   }
+
+  const listed = stripEmptyListLines(leading, items, notes);
+  leading = listed.leading;
+  items = listed.items;
+  notes = listed.notes;
 
   for (const id of [...tainted].sort((a, b) => a - b)) {
     if (reverts.has(id))

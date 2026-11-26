@@ -151,6 +151,34 @@ export function passRefs(
     }
   }
 
+  const inRef = new Set<number>();
+  for (const ref of scan.refs) {
+    for (const id of ref.tokenIds) {
+      const at = indexOf.get(id);
+      if (at !== undefined) inRef.add(at);
+    }
+  }
+  if (documentHasProse(items, inRef)) {
+    for (const [start, end] of paragraphRanges(items)) {
+      if (!isDetachedRefParagraph(items, start, end, inRef)) continue;
+      if (overlaps(used, [start, end])) continue;
+      mark(used, [start, end]);
+      splices.push({
+        start,
+        end,
+        insert: [],
+        notes: [
+          {
+            action: "remove-orphan-ref",
+            details: ["detached"],
+            start: 0,
+            end: 0,
+          },
+        ],
+      });
+    }
+  }
+
   const next = applySplices(
     items,
     notes,
@@ -221,6 +249,46 @@ function overlaps(used: Set<number>, range: [number, number]): boolean {
 
 function mark(used: Set<number>, range: [number, number]) {
   for (let i = range[0]; i < range[1]; i++) used.add(i);
+}
+
+function paragraphRanges(items: readonly StreamItem[]): Array<[number, number]> {
+  const ranges: Array<[number, number]> = [];
+  let start = 0;
+  for (let i = 0; i < items.length; i++) {
+    if (i === items.length - 1 || /\n\s*\n/.test(items[i]!.gapAfter)) {
+      if (start <= i) ranges.push([start, i + 1]);
+      start = i + 1;
+    }
+  }
+  return ranges;
+}
+
+function documentHasProse(
+  items: readonly StreamItem[],
+  inRef: ReadonlySet<number>,
+): boolean {
+  for (let i = 0; i < items.length; i++) {
+    if (inRef.has(i)) continue;
+    if (/\p{L}/u.test(items[i]!.text)) return true;
+  }
+  return false;
+}
+
+function isDetachedRefParagraph(
+  items: readonly StreamItem[],
+  start: number,
+  end: number,
+  inRef: ReadonlySet<number>,
+): boolean {
+  let sawRef = false;
+  for (let i = start; i < end; i++) {
+    if (inRef.has(i)) {
+      sawRef = true;
+      continue;
+    }
+    if (items[i]!.text.trim() !== "") return false;
+  }
+  return sawRef;
 }
 
 function isEmptyRef(
